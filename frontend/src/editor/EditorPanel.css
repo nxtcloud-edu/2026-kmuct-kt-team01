@@ -2,7 +2,7 @@
 .zzik-editor * { box-sizing: border-box; }
 .zzik-editor button { font: inherit; cursor: pointer; border: 1px solid #d9ded9; background: #fff; color: inherit; border-radius: 10px; padding: 10px 14px; min-height: 44px; }
 .zzik-editor button:disabled { opacity: .5; cursor: not-allowed; }
-.zzik-editor button:focus-visible, .zzik-editor input:focus-visible { outline: 3px solid #3d735a; outline-offset: 3px; }
+.zzik-editor button:focus-visible, .zzik-editor input:focus-visible, .zzik-editor a:focus-visible { outline: 3px solid #3d735a; outline-offset: 3px; }
 .zzik-editor__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .zzik-editor__header h2 { font-size: 20px; margin: 6px 0 0; letter-spacing: -.04em; }
 .zzik-editor__eyebrow { font-size: 10px; letter-spacing: .16em; color: #53665b; font-weight: 700; }
@@ -32,5 +32,6 @@
 .zzik-editor__final, .zzik-editor__sample { background: #e4eddd; color: #355a44; padding: 3px 7px; border-radius: 5px; font-size: 11px; }
 .zzik-editor__approval { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 14px; font-size: 12px; }
 .zzik-editor__approval button { margin-left: auto; font-size: 12px; }
+.zzik-editor__download { color: #355a44; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .zzik-editor__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 @media (max-width: 420px) { .zzik-editor__compare { flex-wrap: wrap; } .zzik-editor__compare p { flex-basis: 100%; margin-bottom: 0; } }

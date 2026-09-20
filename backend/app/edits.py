@@ -261,7 +261,9 @@ def _version_list(tx: EditTransaction, member_id: str, repository_mode: str) -> 
             required_member_ids=sorted(targets), approved_member_ids=sorted(approved),
             is_final=edit.id == final_id, can_approve=member_id in targets and not blocked,
             approved_by_me=member_id in approved, approval_blocked_reason=blocked,
-            provider=photo.provider, mode=photo.mode, storage_mode=repository_mode))
+            provider=photo.provider, mode=photo.mode, storage_mode=repository_mode,
+            preview_url=f"/api/edits/{edit.id}/preview",
+            download_url=f"/api/edits/{edit.id}/download"))
     return dict(photo_id=photo.id, versions=versions, final_edit_id=final_id,
                 provider=photo.provider, mode=photo.mode, storage_mode=repository_mode)
 

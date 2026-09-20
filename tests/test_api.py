@@ -248,6 +248,13 @@ def test_role5_edit_approval_and_final_zip_preserve_original(tmp_path) -> None:
     assert approved.status_code == 200
     assert approved.json()["is_final"] is True
 
+    preview = owner.get(approved.json()["preview_url"])
+    download = owner.get(approved.json()["download_url"])
+    assert preview.status_code == download.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+    assert download.headers["content-disposition"] == 'attachment; filename="group-edit-1.jpg"'
+    assert preview.content == download.content
+
     final_zip = owner.post(
         f"/api/albums/{album['album_id']}/download",
         json={"photo_ids": [photo_id], "version": "final"},

@@ -21,6 +21,8 @@ export interface EditVersion {
   provider: string | null
   mode: string | null
   storage_mode: string
+  preview_url: string
+  download_url: string
 }
 
 export interface EditorPanelProps {
@@ -54,6 +56,7 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
   const [brightness, setBrightness] = useState(1)
   const [saturation, setSaturation] = useState(1)
   const [parentId, setParentId] = useState<string | null>(null)
+  const [previewVersionId, setPreviewVersionId] = useState<string | null>(null)
   const [comparing, setComparing] = useState(false)
   const [versions, setVersions] = useState<EditVersion[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +70,7 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
   const refreshVersions = useRef<() => void>(() => {})
   const memberSignature = members.map((member) => member.id).sort().join(',')
   const sample = !isUuid(photoId)
+  const previewVersion = versions.find((version) => version.id === previewVersionId)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -134,6 +138,7 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
       if (signal.aborted) return
       setVersions((previous) => [saved, ...previous.filter((version) => version.id !== saved.id)])
       setParentId(saved.id)
+      setPreviewVersionId(saved.id)
       setNotice(`버전 ${saved.number}을 저장했어요.`)
       onSaved()
     })
@@ -161,13 +166,13 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
   return <section className="zzik-editor" aria-label="사진 보정" aria-busy={loading || pending}>
     <header className="zzik-editor__header">
       <div><span className="zzik-editor__eyebrow">EDIT TOGETHER</span><h2>함께 고르는 한 장</h2></div>
-      <button type="button" disabled={disabled} onClick={() => { setBrightness(1); setSaturation(1); setComparing(false) }}>초기화</button>
+      <button type="button" disabled={disabled} onClick={() => { setBrightness(1); setSaturation(1); setPreviewVersionId(null); setComparing(false) }}>초기화</button>
     </header>
 
     <div className="zzik-editor__preview">
-      <img src={originalUrl} alt="보정 미리보기" draggable={false}
-        style={{ filter: comparing ? 'none' : `brightness(${brightness}) saturate(${saturation})` }} />
-      <span className="zzik-editor__preview-label">{comparing ? '원본' : '빠른 미리보기'}</span>
+      <img src={comparing ? originalUrl : (previewVersion?.preview_url ?? originalUrl)} alt="보정 미리보기" draggable={false}
+        style={{ filter: comparing || previewVersion ? 'none' : `brightness(${brightness}) saturate(${saturation})` }} />
+      <span className="zzik-editor__preview-label">{comparing ? '원본' : previewVersion ? `서버 저장본 · 버전 ${previewVersion.number}` : '빠른 미리보기'}</span>
     </div>
     <div className="zzik-editor__compare">
       <p>저장본과 미리보기의 색감이 다를 수 있어요.</p>
@@ -185,11 +190,11 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
       <legend className="zzik-editor__sr-only">밝기와 채도 조절</legend>
       <div className="zzik-editor__slider">
         <div className="zzik-editor__slider-heading"><label htmlFor={`${id}-brightness`}>밝기</label><output htmlFor={`${id}-brightness`}>{brightness.toFixed(2)}</output></div>
-        <input id={`${id}-brightness`} type="range" min="0.5" max="1.5" step="0.01" value={brightness} onChange={(event) => setBrightness(Number(event.target.value))} />
+        <input id={`${id}-brightness`} type="range" min="0.5" max="1.5" step="0.01" value={brightness} onChange={(event) => { setBrightness(Number(event.target.value)); setPreviewVersionId(null) }} />
       </div>
       <div className="zzik-editor__slider">
         <div className="zzik-editor__slider-heading"><label htmlFor={`${id}-saturation`}>채도</label><output htmlFor={`${id}-saturation`}>{saturation.toFixed(2)}</output></div>
-        <input id={`${id}-saturation`} type="range" min="0" max="2" step="0.01" value={saturation} onChange={(event) => setSaturation(Number(event.target.value))} />
+        <input id={`${id}-saturation`} type="range" min="0" max="2" step="0.01" value={saturation} onChange={(event) => { setSaturation(Number(event.target.value)); setPreviewVersionId(null) }} />
       </div>
     </fieldset>
 
@@ -205,7 +210,7 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
       {!loading && !loadFailed && versions.length === 0 && <p className="zzik-editor__empty">아직 저장된 보정 버전이 없어요.</p>}
       <ol>{versions.map((version) => <li key={version.id} className={parentId === version.id ? 'is-selected' : ''}>
         <button type="button" className="zzik-editor__version" disabled={disabled} aria-pressed={parentId === version.id}
-          aria-label={`버전 ${version.number} 선택`} onClick={() => { setParentId(version.id); setBrightness(version.brightness); setSaturation(version.saturation) }}>
+          aria-label={`버전 ${version.number} 선택`} onClick={() => { setParentId(version.id); setPreviewVersionId(version.id); setBrightness(version.brightness); setSaturation(version.saturation) }}>
           <strong>버전 {version.number} {version.is_final && !loadFailed && <span className="zzik-editor__final">최종본</span>}</strong>
           <span>{members.find((member) => member.id === version.author_member_id)?.display_name ?? '탈퇴한 멤버'}</span>
           <time dateTime={version.created_at}>{new Date(version.created_at).toLocaleString('ko-KR')}</time>
@@ -216,6 +221,7 @@ function EditorBody({ photoId, originalUrl, members, onSaved }: EditorPanelProps
           {version.approval_blocked_reason && <span>등장 인물 확인이 필요해요.</span>}
           {version.storage_mode === 'fixture' && <span className="zzik-editor__sample">테스트 저장소</span>}
           {version.mode === 'mock' && <span className="zzik-editor__sample">샘플 분석</span>}
+          <a className="zzik-editor__download" href={version.download_url} download>보정본 다운로드</a>
         </div>
       </li>)}</ol>
     </div>

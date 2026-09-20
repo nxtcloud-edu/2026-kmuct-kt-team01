@@ -11,7 +11,8 @@ const first = { id: firstId, photo_id: photoId, author_member_id: memberId, pare
   created_at: '2026-09-20T00:00:00Z', brightness: 1.2, saturation: 0.8,
   approval_count: 0, required_count: 1, required_member_ids: [memberId], approved_member_ids: [],
   is_final: false, can_approve: true, approved_by_me: false, approval_blocked_reason: null,
-  provider: 'fixture', mode: 'fixture', storage_mode: 'fixture' }
+  provider: 'fixture', mode: 'fixture', storage_mode: 'fixture',
+  preview_url: `/api/edits/${firstId}/preview`, download_url: `/api/edits/${firstId}/download` }
 const fetchMock = vi.fn<typeof fetch>()
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
@@ -36,6 +37,8 @@ describe('EditorPanel', () => {
     render(<EditorPanel photoId={photoId} originalUrl="/photo.jpg" members={members} onSaved={onSaved} />)
     fireEvent.click(await screen.findByRole('button', { name: /버전 1 선택/ }))
     expect((screen.getByLabelText('채도') as HTMLInputElement).value).toBe('0.8')
+    expect(screen.getByAltText('보정 미리보기')).toHaveAttribute('src', `/api/edits/${firstId}/preview`)
+    expect(screen.getByRole('link', { name: '보정본 다운로드' })).toHaveAttribute('href', `/api/edits/${firstId}/download`)
     fireEvent.change(screen.getByLabelText('밝기'), { target: { value: '1.3' } })
     fireEvent.click(screen.getByRole('button', { name: '새 버전 저장' }))
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce())

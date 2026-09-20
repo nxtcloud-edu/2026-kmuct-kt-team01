@@ -556,6 +556,49 @@ def final_edit(db: Session, photo: Photo) -> Edit | None:
     )
 
 
+def require_edit(db: Session, member: Member, edit_id: str) -> tuple[Edit, Photo]:
+    edit = db.get(Edit, edit_id)
+    if edit is None:
+        raise ApiError(404, "EDIT_NOT_FOUND", "보정 버전을 찾을 수 없습니다.")
+    photo = require_photo(db, member, edit.photo_id)
+    return edit, photo
+
+
+def edit_object_key(photo: Photo, edit: Edit) -> str:
+    return f"albums/{photo.album_id}/photos/{photo.id}/edit-{edit.number}.jpg"
+
+
+@router.get("/edits/{edit_id}/preview")
+def preview_edit(
+    edit_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> Response:
+    edit, photo = require_edit(db, member, edit_id)
+    key = edit_object_key(photo, edit)
+    url = storage.signed_url(key, expires=300)
+    if url:
+        return RedirectResponse(url=url, status_code=307)
+    return Response(content=storage.get(key), media_type="image/jpeg")
+
+
+@router.get("/edits/{edit_id}/download")
+def download_edit(
+    edit_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> Response:
+    edit, photo = require_edit(db, member, edit_id)
+    filename = f"{Path(photo.filename).stem}-edit-{edit.number}.jpg"
+    return Response(
+        content=storage.get(edit_object_key(photo, edit)),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/albums/{album_id}/download")
 def download_album_selection(
     album_id: str,
@@ -586,7 +629,7 @@ def download_album_selection(
                     "전원 승인된 보정본이 없는 사진이 있습니다.",
                     {"photo_id": photo.id},
                 )
-            key = f"albums/{photo.album_id}/photos/{photo.id}/edit-{edit.number}.jpg"
+            key = edit_object_key(photo, edit)
             filename = f"{Path(photo.filename).stem}-edit-{edit.number}.jpg"
         selected.append((photo, key, filename))
     archive = tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
