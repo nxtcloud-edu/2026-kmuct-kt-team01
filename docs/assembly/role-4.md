@@ -84,21 +84,20 @@ DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건�
   계정에 `anthropic.claude-opus-5` 접근 권한이 있는지도 확인하지 못했다.
 - **얼굴 그룹의 실제 묶음 정확도** — 주입한 가짜 비교 함수로만 검사했다.
 
-## 3번에게 보낼 요청 (아직 이슈로 등록 못 함)
+## 3번과의 연동 상태
 
-1. **`worker.py` 에서 `analyze(..., load_reference=storage.get)` 를 넘겨 달라.**
-   지금은 `STORAGE_BACKEND=local` 이면 기준 셀카를 읽을 길이 없어 모든 멤버가
-   `NO_REFERENCE_BUCKET` 으로 건너뛰어진다(= 인물 매칭 0건). `worker.py` 는 3번 소유라
-   내가 고치지 않았다. 한 줄이면 된다.
-2. **`tests/test_api.py` 변경 확인.** `test_reference_endpoint_reports_missing_role_four_dependency`
-   가 analysis.py 부재를 전제로 503 을 기대했다. 모듈이 생겨 200 이 되므로 부재 상황을
-   monkeypatch 로 주입해 503 검사를 살리고, 연결된 정상 경로 테스트를 따로 추가했다.
-3. **`requirements.txt` 에 `anthropic[bedrock]` 추가 여부 결정.** T3 요약·자연어 검색에만
-   필요하다. 없어도 analysis/quality/facegroups 는 정상 동작하고 요약만
-   `DEPENDENCY_MISSING` 으로 실패한다. 쓰지 않을 거면 추가하지 않아도 된다.
-4. **연사 그룹화 중복.** `worker.recompute_bursts` 와 내 `quality.group_bursts` 가 같은 일을
-   한다. 3번 것이 이미 DB 에 붙어 동작하므로 그대로 두고, 내 함수는 남겨만 뒀다.
-   정리하고 싶으면 알려 달라. 임의로 지우지 않았다.
+3번이 `assemble/20260920` 에서 내 첫 두 커밋(`e7eb611`, `e460b70`)을 이미 가져갔고
+`fd67890 feat(integration): connect role 4 analysis worker` 로 연결까지 끝냈다.
+그래서 내가 보내려던 요청 4건 중 3건이 이미 해결됐다.
+
+| 요청 | 상태 |
+|---|---|
+| 기준 셀카 로딩 경로 | **해결됨.** 3번이 `worker.analysis_members(members, storage)` 로 ORM Member 를 `reference_bytes`/`reference_s3` dict 로 바꿔 넘긴다. 내 `load_reference` 훅은 대안으로만 남긴다 |
+| `requirements.txt` 의 `anthropic[bedrock]` | **해결됨.** 3번이 `anthropic[bedrock]==1.7.0` 추가 |
+| `tests/test_api.py` | **해결됨.** 3번이 직접 `test_reference_endpoint_uses_role_four_mock_and_stores_reference` 로 고쳤다. 충돌을 없애려고 내 버전을 버리고 3번 것을 그대로 채택했다 |
+| 연사 그룹화 중복 | **열려 있음.** `worker.recompute_bursts` 와 내 `quality.group_bursts` 가 같은 일을 한다. 3번 것이 DB 에 붙어 동작하므로 그대로 두고 내 함수는 남겨만 뒀다. 정리 여부는 3번이 정한다 |
+
+`assemble/20260920` 에 아직 안 들어간 내 커밋: `61ffc18`, `d13ef63`, `0bf49e7`, `70b29cb`, 그 이후.
 
 ## 파일 소유권 메모
 

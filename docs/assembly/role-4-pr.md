@@ -50,12 +50,19 @@ gh pr create --base main --head work/20260920/role-4 --draft \
 - **얼굴 그룹의 실제 묶음 정확도 미측정.** 주입한 비교 함수로만 검사했습니다.
 - PostgreSQL이 아닌 SQLite 기준입니다(3번의 기존 조건과 동일).
 
-## 연동 요청 (역할 3)
+## 역할 3과의 관계
 
-1. **`worker.py`에서 `analyze(..., load_reference=storage.get)`를 넘겨 주세요.** 지금은 `STORAGE_BACKEND=local`일 때 기준 셀카를 읽을 경로가 없어 모든 멤버가 `NO_REFERENCE_BUCKET`으로 건너뛰어집니다(= 인물 매칭 0건). `worker.py`는 역할 3 소유라 제가 고치지 않았습니다.
-2. **`tests/test_api.py` 변경 확인 필요.** `test_reference_endpoint_reports_missing_role_four_dependency`가 `analysis.py` 부재를 전제로 503을 기대하고 있었습니다. 모듈이 생겨 200이 되므로, 부재 상황을 monkeypatch로 주입해 503 검사를 그대로 살리고 연결된 정상 경로 테스트를 따로 추가했습니다. 의도를 바꾸지 않았는지 확인해 주세요.
-3. **`requirements.txt`에 `anthropic[bedrock]` 추가 여부 결정.** T3 요약·자연어 검색에만 필요합니다. 없어도 analysis/quality/facegroups는 정상 동작하고 요약만 `DEPENDENCY_MISSING`으로 실패합니다.
-4. **연사 그룹화 중복 확인.** `worker.recompute_bursts`와 `quality.group_bursts`가 같은 일을 합니다. 역할 3 것이 이미 DB에 붙어 동작하므로 그대로 두고 제 함수는 남겨만 뒀습니다. 정리 여부를 알려 주세요.
+역할 3이 `assemble/20260920`에서 제 첫 두 커밋을 이미 가져가고 `fd67890 connect role 4 analysis worker`로 연결까지 끝냈습니다. 그 사실을 확인하고 이 브랜치를 거기에 맞췄습니다.
+
+- **기준 셀카 로딩**: 역할 3이 `worker.analysis_members(members, storage)`로 ORM Member를 `reference_bytes`(local) / `reference_s3`(S3) dict로 바꿔 넘기는 방식으로 해결했습니다. 그 경로가 정식입니다. 제 `load_reference` 훅은 그 함수를 쓰지 않는 호출자를 위한 대안으로만 남깁니다.
+- **`requirements.txt`**: 역할 3이 `anthropic[bedrock]==1.7.0`을 이미 추가했습니다.
+- **`tests/test_api.py`**: 역할 3이 직접 고쳤으므로 **제 버전을 버리고 역할 3 것을 그대로 채택**했습니다. 이 브랜치에는 해당 파일에 대한 제 변경이 없습니다.
+
+### 남은 확인 1건
+**연사 그룹화 중복.** `worker.recompute_bursts`와 `quality.group_bursts`가 같은 일을 합니다. 역할 3 것이 이미 DB에 붙어 동작하므로 그대로 두고 제 함수는 남겨만 뒀습니다(제거하지 않았습니다). 정리 여부를 알려 주세요.
+
+### 아직 assemble에 안 들어간 커밋
+`61ffc18`, `d13ef63`, `0bf49e7`, 그리고 문서 커밋들입니다.
 
 ## 인터페이스 요약
 
