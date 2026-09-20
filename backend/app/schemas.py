@@ -43,6 +43,7 @@ class AlbumOut(ORMModel):
 
 class PhotoMemberOut(BaseModel):
     member_id: str
+    display_name: str
     similarity: float | None
     source: str
     excluded: bool
@@ -53,6 +54,8 @@ class PhotoOut(ORMModel):
     album_id: str
     uploader_member_id: str
     filename: str
+    image_url: str
+    thumb_url: str
     mime: str
     width: int
     height: int
@@ -78,6 +81,7 @@ class PhotoPage(BaseModel):
     page: int
     page_size: int
     total: int
+    total_pages: int
 
 
 class UploadResult(BaseModel):

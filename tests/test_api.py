@@ -123,6 +123,7 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
     assert changed.json()["members"] == [
         {
             "member_id": invitee_id,
+            "display_name": "서준",
             "similarity": None,
             "source": "manual",
             "excluded": False,
@@ -292,6 +293,7 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("GET", "/api/albums/{album_id}/status"),
         ("GET", "/api/albums/{album_id}/coverage"),
         ("GET", "/api/photos/{photo_id}/download"),
+        ("GET", "/api/photos/{photo_id}/thumbnail"),
         ("POST", "/api/albums/{album_id}/download"),
         ("POST", "/api/photos/{photo_id}/edits"),
         ("GET", "/api/photos/{photo_id}/edits"),
@@ -299,3 +301,47 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("DELETE", "/api/edits/{edit_id}/approve"),
         ("GET", "/api/health/ready"),
     }.issubset(operations)
+
+
+def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -> None:
+    owner, app = make_client(tmp_path)
+    album = create_album(owner)
+    invitee = TestClient(app)
+    invitee.post(
+        "/api/albums/join",
+        json={"invite_code": album["invite_code"], "display_name": "서준"},
+    )
+    members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
+    owner_id, invitee_id = [item["id"] for item in members]
+    uploaded = owner.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[
+            ("files", ("both.jpg", jpeg_bytes(), "image/jpeg")),
+            ("files", ("owner.jpg", jpeg_bytes(), "image/jpeg")),
+        ],
+    ).json()["results"]
+    both_id, owner_only_id = [item["photo"]["id"] for item in uploaded]
+    with app.state.session_factory() as db:
+        db.add_all(
+            [
+                PhotoMember(photo_id=both_id, member_id=owner_id, source="manual"),
+                PhotoMember(photo_id=both_id, member_id=invitee_id, source="manual"),
+                PhotoMember(photo_id=owner_only_id, member_id=owner_id, source="manual"),
+            ]
+        )
+        db.commit()
+
+    response = owner.get(
+        f"/api/albums/{album['album_id']}/photos",
+        params=[("member_id", owner_id), ("member_id", invitee_id), ("page_size", "1")],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["total_pages"] == 1
+    photo = body["items"][0]
+    assert photo["id"] == both_id
+    assert photo["image_url"] == f"/api/photos/{both_id}/download"
+    assert photo["thumb_url"] == f"/api/photos/{both_id}/thumbnail"
+    assert {member["display_name"] for member in photo["members"]} == {"민지", "서준"}
+    assert owner.get(photo["thumb_url"]).status_code == 200

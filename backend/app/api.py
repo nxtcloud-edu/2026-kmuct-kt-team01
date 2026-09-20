@@ -4,6 +4,7 @@ import hashlib
 import secrets
 import tempfile
 import zipfile
+import math
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
@@ -106,17 +107,23 @@ def require_photo(
 
 
 def photo_out(photo: Photo) -> PhotoOut:
-    output = PhotoOut.model_validate(photo)
-    output.members = [
-        PhotoMemberOut(
+    return PhotoOut(
+        **{
+            column: getattr(photo, column)
+            for column in PhotoOut.model_fields
+            if column not in {"image_url", "thumb_url", "members"}
+        },
+        image_url=f"/api/photos/{photo.id}/download",
+        thumb_url=f"/api/photos/{photo.id}/thumbnail",
+        members=[PhotoMemberOut(
             member_id=link.member_id,
+            display_name=link.member.display_name,
             similarity=link.similarity,
             source=link.source,
             excluded=link.excluded,
         )
-        for link in photo.member_links
-    ]
-    return output
+        for link in photo.member_links],
+    )
 
 
 def set_session_cookie(request: Request, response: Response, member_id: str) -> None:
@@ -300,7 +307,7 @@ def list_photos(
     album_id: str,
     member: Annotated[Member, Depends(current_member)],
     db: Annotated[Session, Depends(get_db)],
-    member_id: str | None = None,
+    member_id: list[str] | None = Query(default=None),
     shot_type: str | None = None,
     tag: str | None = None,
     only_best: bool = False,
@@ -310,10 +317,11 @@ def list_photos(
 ) -> PhotoPage:
     require_album_member(member, album_id)
     query = select(Photo).where(Photo.album_id == album_id).options(selectinload(Photo.member_links))
-    if member_id:
+    for selected_member_id in dict.fromkeys(member_id or []):
         query = query.where(
             Photo.member_links.any(
-                (PhotoMember.member_id == member_id) & (PhotoMember.excluded.is_(False))
+                (PhotoMember.member_id == selected_member_id)
+                & (PhotoMember.excluded.is_(False))
             )
         )
     if shot_type:
@@ -335,6 +343,7 @@ def list_photos(
         page=page,
         page_size=page_size,
         total=total,
+        total_pages=max(1, math.ceil(total / page_size)),
     )
 
 
@@ -467,6 +476,20 @@ def download_photo(
         media_type=photo.mime,
         headers={"Content-Disposition": f'attachment; filename="{photo.filename}"'},
     )
+
+
+@router.get("/photos/{photo_id}/thumbnail")
+def thumbnail_photo(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> Response:
+    photo = require_photo(db, member, photo_id)
+    url = storage.signed_url(photo.thumb_key, expires=300)
+    if url:
+        return RedirectResponse(url=url, status_code=307)
+    return Response(content=storage.get(photo.thumb_key), media_type="image/jpeg")
 
 
 @router.delete("/photos/{photo_id}", status_code=204)
