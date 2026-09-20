@@ -58,12 +58,9 @@ worker 가 ORM 객체를 그대로 넘기므로 지금 코드 그대로 동작�
 | 2 | `load_reference(reference_key)` | **권장.** `analyze(..., load_reference=storage.get)` |
 | 3 | `reference_bucket` / `reference_s3` / 환경변수 `S3_BUCKET` + `reference_key` | S3 직접 참조 |
 
-> **worker 에 한 줄 추가가 필요하다 (REQUESTED):**
-> ```python
-> result = analyze(image_bytes, photo.album_id, members, load_reference=storage.get)
-> ```
-> 이걸 넘기지 않으면 `STORAGE_BACKEND=local` 에서 기준 셀카를 읽을 길이 없어
-> 모든 멤버가 `NO_REFERENCE_BUCKET` 으로 건너뛰어진다(= 인물 매칭 0건).
+> **해결됨.** 3번이 `worker.analysis_members(members, storage)` 로 ORM Member 를
+> `reference_bytes`(local) / `reference_s3`(S3) dict 로 바꿔 넘긴다(커밋 `fd67890`).
+> 그 경로가 정식이다. `load_reference` 는 그 함수를 쓰지 않는 호출자를 위한 대안으로만 남긴다.
 
 기준 얼굴 위치를 알 수 없거나, 로드에 실패하거나, 그 셀카에 얼굴이 없으면
 **그 멤버만 건너뛰고** `skipped_members` 에 사유(`NO_REFERENCE` /
@@ -263,15 +260,11 @@ result = group_faces(all_faces, compare)
 - `FACE_PROVIDER=rekognition` 에서만 실제 비교가 된다. mock 에서는 comparer 를 만들 수 없다
   (`CONFIG_INVALID`). 가짜 그룹을 만들어 보여주지 않기 위해서다.
 
-## 11. 3번에게 필요한 것 (REQUESTED)
+## 11. 의존성 (해결됨)
 
-`backend/requirements.txt` 는 3번 소유다. 이 모듈은 다음이 필요하다:
+`requirements.txt` 는 3번 소유이고, 필요한 것이 이미 다 들어 있다:
+`boto3`, `pillow`, `anthropic[bedrock]==1.7.0` (커밋 `fd67890`).
 
-```
-boto3        # 로컬 검증 버전 1.43.98   (analysis.py)
-Pillow       # 로컬 검증 버전 12.2.0   (quality.py)
-anthropic[bedrock]  # 로컬 검증 버전 1.7.0  (insights.py, T3 요약만. 없으면 요약만 비활성)
-```
-
-`anthropic` 은 요약 기능에서만 lazy import 한다. 설치하지 않아도 `analysis.py` 와
-`quality.py` 는 정상 동작하고, 요약만 `DEPENDENCY_MISSING` 으로 실패한다.
+`anthropic` 은 `insights.py` 에서만 lazy import 한다. 설치하지 않아도
+`analysis.py` / `quality.py` / `facegroups.py` 는 정상 동작하고,
+요약·자연어 검색만 `DEPENDENCY_MISSING` 으로 실패한다.

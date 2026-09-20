@@ -131,38 +131,21 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
         assert db.scalar(select(func.count(Approval.edit_id))) == 0
 
 
-def test_reference_endpoint_reports_missing_role_four_dependency(tmp_path, monkeypatch) -> None:
-    """역할 4 모듈이 없을 때의 503 동작. 이제 모듈이 있으므로 부재 상황을 주입해 검사한다."""
-    from backend.app import analysis_contract
-
-    def unavailable(_image_bytes):
-        raise analysis_contract.AnalysisUnavailable("role 4 analysis module is not available")
-
-    monkeypatch.setattr("backend.app.api.validate_reference", unavailable)
-    client, _ = make_client(tmp_path)
-    create_album(client)
-    response = client.post(
-        "/api/members/me/reference",
-        files={"file": ("selfie.jpg", jpeg_bytes(), "image/jpeg")},
-    )
-    assert response.status_code == 503
-    assert response.json()["code"] == "ANALYSIS_UNAVAILABLE"
-    assert response.json()["details"] == {"owner": "role-4", "mode": "unavailable"}
-
-
-def test_reference_endpoint_accepts_selfie_once_role_four_is_connected(tmp_path) -> None:
-    """역할 4 analysis.py 가 붙은 뒤의 정상 경로. 기본 FACE_PROVIDER=mock 이다."""
+def test_reference_endpoint_uses_role_four_mock_and_stores_reference(tmp_path) -> None:
     client, app = make_client(tmp_path)
     create_album(client)
     response = client.post(
         "/api/members/me/reference",
         files={"file": ("selfie.jpg", jpeg_bytes(), "image/jpeg")},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 200
+    assert response.json()["reference_indexed"] is True
+    assert response.json()["provider"] == "mock"
+    assert response.json()["mode"] == "mock"
     with app.state.session_factory() as db:
-        member = db.scalar(select(Member))
-        assert member.reference_indexed is True
+        member = db.get(Member, response.json()["member_id"])
         assert member.reference_key.endswith("/reference.jpg")
+        assert app.state.storage.get(member.reference_key)
 
 
 def test_selected_originals_download_as_zip(tmp_path) -> None:
