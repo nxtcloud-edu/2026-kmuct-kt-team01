@@ -1,0 +1,36 @@
+.zzik-editor { color: #252827; font: inherit; width: 100%; min-width: 0; }
+.zzik-editor * { box-sizing: border-box; }
+.zzik-editor button { font: inherit; cursor: pointer; border: 1px solid #d9ded9; background: #fff; color: inherit; border-radius: 10px; padding: 10px 14px; min-height: 44px; }
+.zzik-editor button:disabled { opacity: .5; cursor: not-allowed; }
+.zzik-editor button:focus-visible, .zzik-editor input:focus-visible { outline: 3px solid #3d735a; outline-offset: 3px; }
+.zzik-editor__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.zzik-editor__header h2 { font-size: 20px; margin: 6px 0 0; letter-spacing: -.04em; }
+.zzik-editor__eyebrow { font-size: 10px; letter-spacing: .16em; color: #53665b; font-weight: 700; }
+.zzik-editor__preview { position: relative; border-radius: 16px; overflow: hidden; background: #f0f2ef; }
+.zzik-editor__preview img { width: 100%; max-height: 440px; object-fit: contain; display: block; }
+.zzik-editor__preview-label { position: absolute; top: 12px; left: 12px; background: #fff; color: #252827; border-radius: 20px; padding: 6px 10px; font-size: 12px; }
+.zzik-editor__compare { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin: 12px 0 22px; }
+.zzik-editor__compare p { color: #5d655f; font-size: 12px; line-height: 1.5; flex: 1; }
+.zzik-editor__compare button { flex-shrink: 0; touch-action: none; user-select: none; font-size: 12px; }
+.zzik-editor__controls { border: 0; padding: 0; margin: 0; display: grid; gap: 22px; }
+.zzik-editor__slider-heading { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; }
+.zzik-editor__slider output { font-variant-numeric: tabular-nums; color: #53665b; }
+.zzik-editor__slider input { width: 100%; height: 32px; margin: 8px 0 0; accent-color: #355a44; }
+.zzik-editor .zzik-editor__save { width: 100%; color: #fff; background: #355a44; border-color: #355a44; font-weight: 600; min-height: 48px; }
+.zzik-editor__status { color: #355a44; min-height: 20px; font-size: 13px; }
+.zzik-editor__error { color: #a32d29; background: #fff2ee; padding: 12px; border-radius: 10px; font-size: 13px; }
+.zzik-editor__message, .zzik-editor__empty { color: #5d655f; line-height: 1.6; font-size: 13px; }
+.zzik-editor__versions { border-top: 1px solid #e6e9e4; margin-top: 26px; padding-top: 20px; }
+.zzik-editor__versions h3 { font-size: 15px; margin: 0 0 16px; }
+.zzik-editor__versions h3 > span { color: #758075; margin-left: 6px; }
+.zzik-editor__versions ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.zzik-editor__versions li { border: 1px solid #e0e5dd; border-radius: 12px; padding: 10px; }
+.zzik-editor__versions li.is-selected { border-color: #355a44; background: #f4f7f1; }
+.zzik-editor .zzik-editor__version { border: 0; background: transparent; display: grid; gap: 6px; text-align: left; width: 100%; }
+.zzik-editor__version strong { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.zzik-editor__version > span, .zzik-editor__version time { font-size: 12px; color: #5d655f; }
+.zzik-editor__final, .zzik-editor__sample { background: #e4eddd; color: #355a44; padding: 3px 7px; border-radius: 5px; font-size: 11px; }
+.zzik-editor__approval { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 4px 14px; font-size: 12px; }
+.zzik-editor__approval button { margin-left: auto; font-size: 12px; }
+.zzik-editor__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 420px) { .zzik-editor__compare { flex-wrap: wrap; } .zzik-editor__compare p { flex-basis: 100%; margin-bottom: 0; } }

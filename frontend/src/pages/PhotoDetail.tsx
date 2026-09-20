@@ -2,11 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ApiClient } from '../lib/api'
 import type { Album, Coverage, Photo } from '../lib/types'
 import { ErrorState, Spinner } from '../components/AsyncState'
-import { EditorSlot } from '../components/EditorSlot'
 import { ChartIcon, DownloadIcon } from '../components/icons'
+import EditorPanel from '../editor/EditorPanel'
 
 const albumId = 'album-demo'
-const currentMemberId = 'm-1'
 
 export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; photoId: string; onBack: () => void }) {
   const [photo, setPhoto] = useState<Photo | null>(null)
@@ -33,7 +32,14 @@ export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; ph
         <section className="info-section"><div className="section-title"><h2>사진 품질</h2><span>{photo.face_count}명 · {photo.shot_type === 'group' ? '단체샷' : photo.shot_type === 'solo' ? '개인 사진' : '인물 없음'}</span></div><div className="quality-grid">{([['선명도', photo.quality.sharpness], ['밝기', photo.quality.brightness], ['눈 뜬 비율', photo.quality.eyes_open_ratio ? photo.quality.eyes_open_ratio * 100 : undefined]] as const).map(([label, value]) => <div key={label}><span>{label}</span><b>{value === undefined ? '정보 없음' : `${Math.round(value)}%`}</b><i><em style={{ width: `${value ?? 0}%` }} /></i></div>)}</div></section>
         <section className="info-section analysis-info"><div><span>분석 방식</span><b>{photo.provider ?? '미분석'} · {photo.mode ?? '정보 없음'}</b></div>{photo.analysis_status === 'failed' && <button className="button secondary" onClick={() => void reanalyze()}>분석 다시 시도</button>}</section>
       </aside></div>
-    <EditorSlot photo={photo} currentMemberId={currentMemberId} albumMembers={album.members} onVersionChanged={load} />
+    <div className="editor-panel-shell">
+      <EditorPanel
+        photoId={photo.id}
+        originalUrl={photo.image_url}
+        members={album.members.map(({ id, display_name }) => ({ id, display_name }))}
+        onSaved={() => { void load() }}
+      />
+    </div>
   </main>
 }
 
