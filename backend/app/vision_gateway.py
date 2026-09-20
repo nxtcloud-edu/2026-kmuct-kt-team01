@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import ssl
 from dataclasses import dataclass
 from typing import Any, Mapping
 from urllib.parse import urlparse
@@ -21,6 +22,8 @@ PROVIDER_OFF = "off"
 PROVIDER_GATEWAY = "gateway"
 MODE_HYBRID = "hybrid"
 
+_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
+
 
 @dataclass(frozen=True)
 class GatewaySettings:
@@ -29,6 +32,9 @@ class GatewaySettings:
     api_key: str
     model_id: str
     timeout_seconds: float
+    # IP 주소로 붙는 게이트웨이는 자체서명 인증서를 쓰는 경우가 있어 검증을 끌 수 있게 둔다.
+    # 기본값은 검증 켜기다. 끄려면 VISION_VERIFY_TLS=false 를 명시해야 한다.
+    verify_tls: bool = True
 
 
 def load_gateway_settings(env: Mapping[str, str] | None = None) -> GatewaySettings:
@@ -68,7 +74,8 @@ def load_gateway_settings(env: Mapping[str, str] | None = None) -> GatewaySettin
                 "CONFIG_INVALID", "VISION_TIMEOUT_SECONDS는 0보다 커야 합니다", retryable=False
             )
 
-    return GatewaySettings(provider, api_base, api_key, model_id, timeout_seconds)
+    verify_tls = (env.get("VISION_VERIFY_TLS") or "true").strip().lower() not in _FALSE_VALUES
+    return GatewaySettings(provider, api_base, api_key, model_id, timeout_seconds, verify_tls)
 
 
 def enrich_analysis(
@@ -112,7 +119,7 @@ def enrich_analysis(
     }
 
     owns_client = client is None
-    client = client or httpx.Client(timeout=settings.timeout_seconds)
+    client = client or httpx.Client(timeout=settings.timeout_seconds, verify=settings.verify_tls)
     try:
         response = client.post(
             f"{settings.api_base}/chat/completions",
@@ -122,6 +129,15 @@ def enrich_analysis(
     except httpx.TimeoutException as exc:
         raise AnalysisError("GATEWAY_TIMEOUT", "AI 사진 분류 시간이 초과됐습니다", retryable=True) from exc
     except httpx.HTTPError as exc:
+        # httpx 는 TLS 실패도 ConnectError 로 감싼다. 원인 체인을 봐야 구분이 된다.
+        # 재시도해도 소용없는 설정 문제이므로 연결 오류와 다른 코드로 올린다.
+        if _is_tls_failure(exc):
+            raise AnalysisError(
+                "GATEWAY_TLS",
+                "AI 게이트웨이 인증서를 검증할 수 없습니다 (자체서명이면 VISION_VERIFY_TLS=false)",
+                retryable=False,
+                details={"verify_tls": settings.verify_tls},
+            ) from exc
         raise AnalysisError("GATEWAY_CONNECTION", "AI 사진 분류 서버에 연결할 수 없습니다", retryable=True) from exc
     finally:
         if owns_client:
@@ -150,6 +166,17 @@ def enrich_analysis(
     warnings.append("장면·품질은 외부 AI가 분석했고 얼굴 매칭은 FACE_PROVIDER 결과를 유지했습니다")
     enriched["warnings"] = warnings
     return enriched
+
+
+def _is_tls_failure(exc: BaseException) -> bool:
+    seen: set[int] = set()
+    cause: BaseException | None = exc
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLError) or isinstance(cause, ssl.CertificateError):
+            return True
+        cause = cause.__cause__ or cause.__context__
+    return False
 
 
 def _parse_response(response: httpx.Response) -> dict[str, Any]:

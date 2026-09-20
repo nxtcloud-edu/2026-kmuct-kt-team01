@@ -2,6 +2,8 @@ alembic==1.16.5
 anthropic[bedrock]==1.7.0
 boto3==1.40.36
 fastapi==0.117.1
+# vision_gateway 가 런타임에 import 한다. 테스트 전용이 아니다.
+httpx==0.28.1
 itsdangerous==2.2.0
 numpy==2.5.3
 opencv-python-headless==4.11.0.86
@@ -14,5 +16,4 @@ sqlalchemy==2.0.43
 uvicorn[standard]==0.36.0
 
 # Test-only dependencies. Production installs may omit these after splitting files.
-httpx==0.28.1
 pytest==8.4.2

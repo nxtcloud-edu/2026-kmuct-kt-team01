@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import ssl
 
 import httpx
 import pytest
@@ -80,4 +81,33 @@ def test_gateway_auth_error_is_not_retryable():
     with httpx.Client(transport=transport) as client, pytest.raises(AnalysisError) as exc:
         enrich_analysis({"provider": "mock"}, _image_bytes(), settings=settings, client=client)
     assert exc.value.code == "GATEWAY_AUTH"
+    assert exc.value.retryable is False
+
+
+def test_tls_verification_is_on_unless_explicitly_disabled():
+    base_env = {
+        "VISION_PROVIDER": "gateway",
+        "VISION_API_BASE": "https://gateway.test/v1",
+        "VISION_API_KEY": "secret",
+        "VISION_MODEL_ID": "bedrock-haiku",
+    }
+    assert load_gateway_settings(base_env).verify_tls is True
+    assert load_gateway_settings({**base_env, "VISION_VERIFY_TLS": "false"}).verify_tls is False
+    assert load_gateway_settings({**base_env, "VISION_VERIFY_TLS": "0"}).verify_tls is False
+
+
+def test_certificate_failure_is_reported_as_config_problem_not_a_retry():
+    """자체서명 인증서를 만나면 재시도해도 소용없다. 조치 방법을 코드로 구분해 알린다."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("certificate verify failed") from ssl.SSLCertVerificationError(
+            "self-signed certificate"
+        )
+
+    settings = GatewaySettings("gateway", "https://gateway.test/v1", "secret", "bedrock-haiku", 5)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(AnalysisError) as exc:
+            enrich_analysis({"provider": "mock"}, _image_bytes(), settings=settings, client=client)
+
+    assert exc.value.code == "GATEWAY_TLS"
     assert exc.value.retryable is False
