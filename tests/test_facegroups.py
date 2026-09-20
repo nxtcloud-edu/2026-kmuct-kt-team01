@@ -235,3 +235,85 @@ def test_crop_face_rejects_a_zero_sized_box():
     with pytest.raises(AnalysisError) as err:
         crop_face(make_image(), {"left": 0.0, "top": 0.0, "width": 0.0, "height": 0.0})
     assert err.value.code == "FACE_CROP_FAILED"
+
+
+# --------------------------------------------------------------------------
+# 앨범 단위 진입점 (3번이 붙일 때 쓰는 함수)
+# --------------------------------------------------------------------------
+from backend.app.facegroups import group_album_faces  # noqa: E402
+
+
+def analyzed_photo(photo_id: str, statuses: list[str]):
+    return {
+        "id": photo_id,
+        "s3_key": f"albums/a/photos/{photo_id}/original.jpg",
+        "faces": [
+            {
+                "status": status,
+                "member_id": "m1" if status == "matched" else None,
+                "box": {"left": 0.1 + 0.2 * i, "top": 0.1, "width": 0.15, "height": 0.2},
+            }
+            for i, status in enumerate(statuses)
+        ],
+    }
+
+
+def test_album_entry_point_returns_empty_without_calling_aws(monkeypatch):
+    """미등록 얼굴이 없으면 comparer 를 만들지도 않는다(AWS 호출 0회)."""
+    from backend.app import facegroups
+
+    monkeypatch.setattr(
+        facegroups,
+        "make_rekognition_comparer",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("불러서는 안 된다")),
+    )
+    photos = [analyzed_photo("p1", ["matched", "uncertain"])]
+    result = group_album_faces(photos, lambda key: b"")
+
+    assert result["groups"] == []
+    assert result["face_count"] == 0
+    assert result["photo_count"] == 1
+    assert result["comparisons"] == 0
+
+
+def test_album_entry_point_collects_only_unregistered_faces(monkeypatch):
+    from backend.app import facegroups
+
+    seen = {}
+
+    def fake_comparer(load_image, *, settings=None, client=None):
+        seen["load_image"] = load_image
+        return truth_compare
+
+    monkeypatch.setattr(facegroups, "make_rekognition_comparer", fake_comparer)
+    photos = [
+        analyzed_photo("p1", ["matched", "unregistered"]),
+        analyzed_photo("p2", ["unregistered"]),
+    ]
+    loader = lambda key: b""
+    result = group_album_faces(photos, loader)
+
+    assert result["face_count"] == 2          # matched 는 빠진다
+    assert result["photo_count"] == 2
+    assert seen["load_image"] is loader       # Storage.get 을 그대로 넘긴다
+
+
+def test_album_entry_point_skips_rows_without_id_or_key(monkeypatch):
+    from backend.app import facegroups
+
+    monkeypatch.setattr(facegroups, "make_rekognition_comparer", lambda *a, **k: truth_compare)
+    broken = {"id": "", "s3_key": "", "faces": [{"status": "unregistered", "box": {}}]}
+    result = group_album_faces([broken], lambda key: b"")
+    assert result["face_count"] == 0
+
+
+def test_album_entry_point_refuses_mock_provider(monkeypatch):
+    """mock 모드에서는 가짜 인물 그룹을 만들지 않는다."""
+    from backend.app.analysis import load_settings
+
+    photos = [analyzed_photo("p1", ["unregistered"]), analyzed_photo("p2", ["unregistered"])]
+    with pytest.raises(AnalysisError) as err:
+        group_album_faces(
+            photos, lambda key: b"", settings=load_settings({"FACE_PROVIDER": "mock"})
+        )
+    assert err.value.code == "CONFIG_INVALID"
