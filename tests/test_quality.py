@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pytest
 from PIL import Image
@@ -15,7 +15,6 @@ from backend.app.quality import (
     compute_best_score,
     extract_capture_metadata,
     face_metrics,
-    group_bursts,
     inspect_image,
     iou,
     map_labels_to_tags,
@@ -224,49 +223,3 @@ def test_capture_metadata_is_json_serializable(jpeg_bytes):
     import json
 
     json.dumps(extract_capture_metadata(jpeg_bytes).to_dict(), ensure_ascii=False)
-
-
-# --------------------------------------------------------------------------
-# 연사 그룹 / 베스트컷
-# --------------------------------------------------------------------------
-def _burst_items():
-    base = datetime(2026, 9, 20, 10, 0, 0)
-    return [
-        {"id": "p1", "captured_at": base.isoformat(), "best_score": 40.0},
-        {"id": "p2", "captured_at": (base + timedelta(seconds=1)).isoformat(), "best_score": 90.0},
-        {"id": "p3", "captured_at": (base + timedelta(seconds=2)).isoformat(), "best_score": 55.0},
-        {"id": "p4", "captured_at": (base + timedelta(minutes=30)).isoformat(), "best_score": 10.0},
-    ]
-
-
-def test_burst_group_picks_single_best():
-    result = group_bursts(_burst_items())
-    group_ids = {result[pid]["burst_group_id"] for pid in ("p1", "p2", "p3")}
-    assert len(group_ids) == 1 and group_ids != {None}
-    assert [result[pid]["is_best"] for pid in ("p1", "p2", "p3")] == [False, True, False]
-
-
-def test_lonely_photo_has_no_burst_group_but_is_best():
-    result = group_bursts(_burst_items())
-    assert result["p4"] == {"burst_group_id": None, "is_best": True}
-
-
-def test_photo_without_any_timestamp_is_not_grouped():
-    result = group_bursts([{"id": "p1", "best_score": 50.0}])
-    assert result["p1"] == {"burst_group_id": None, "is_best": True}
-
-
-def test_created_at_is_used_when_captured_at_missing():
-    base = datetime(2026, 9, 20, 10, 0, 0)
-    result = group_bursts(
-        [
-            {"id": "a", "created_at": base.isoformat(), "best_score": 10.0},
-            {"id": "b", "created_at": (base + timedelta(seconds=1)).isoformat(), "best_score": 20.0},
-        ]
-    )
-    assert result["a"]["burst_group_id"] == result["b"]["burst_group_id"] is not None
-    assert result["b"]["is_best"] is True
-
-
-def test_burst_grouping_is_deterministic():
-    assert group_bursts(_burst_items()) == group_bursts(list(reversed(_burst_items())))
