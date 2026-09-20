@@ -62,3 +62,5 @@
   - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/5
 - PR #2 교차 검토자 `tkdgur3207` 지정 완료
 - role-5 계약 리뷰 `5258615747` → APPLIED (`1df5ad3`), 최신 head 재검토 요청
+- `ZZIK:20260920:role-2:dependency-session-01` → role-1, REQUESTED
+  - role-3/5 요청 무응답에 따른 세션·전달 상태 확인: https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/11
