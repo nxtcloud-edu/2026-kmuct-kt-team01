@@ -1,6 +1,7 @@
 # ROLE-05 통합 계약 · 2/3번 인계
 
-이 문서는 로컬 구현의 **통합 제안**이다. 팀 공통 계약을 변경하거나 다른 담당자와 합의 완료한 것으로 취급하지 않는다.
+승인 정책은 [3번의 결정](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3#issuecomment-5746567388)을 반영했다.
+운영 어댑터와 미리보기/다운로드 연결은 아직 완료되지 않았다.
 BASE=main / RUN=20260920 확인. 역할 3의 새 기반 aac5017과 역할 2의 5213e68을 읽고 연결 차이를 기록했다.
 현재 요청: [#3 서버 연결](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3),
 [#4 업로드 원본 보존](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/4),
@@ -41,8 +42,8 @@ router에 `/api`가 이미 포함된다. 3번 api.py의 동일 경로 501 handle
 - PhotoSnapshot은 ORM 모델이 아닌 읽기 DTO. 기존 스키마의 값을 매핑한다.
 - `active_member_ids`: 이 앨범의 현재 유효 멤버 ID 집합.
 - `confirmed_member_ids`: excluded=false이면서 확정된 멤버만. uncertain을 여기에 넣지 않는다.
-- `has_unresolved_faces`: 미등록/불확실 얼굴 존재 여부. 기본 True이므로 어댑터가 확인 후 False를 명시해야 승인 가능.
-  이 정보의 스키마 매핑은 3·4번이 결정한다. face_count와 고유 멤버 수만 비교해서 임의 판단하지 않는다.
+- `has_unresolved_faces`: 호환성을 위해 유지하는 정보 필드. 승인 차단 조건으로 사용하지 않는다.
+  불확실/미등록 인물을 confirmed_member_ids에 임의로 넣지 않는다. 별도 스키마 변경은 필요 없다.
 - `provider`, `mode`는 photos 값을 유지한다. 모든 버전 응답에도 포함된다.
 - `edits()`는 EditRecord 목록, `approvals()`는 `{edit_id: set(member_id)}`를 반환한다.
 - `add_edit()`는 계약의 edits 컬럼에 설정을 저장한다. created_at은 ISO UTC 문자열 ↔ DB datetime으로 변환한다.
@@ -51,15 +52,15 @@ router에 `/api`가 이미 포함된다. 3번 api.py의 동일 경로 501 handle
 - `photo_id_for_edit(edit_id)`가 반환한 사진에서도 트랜잭션 안에서 버전 존재와 앨범 권한을 다시 검사한다.
 - 버전 번호는 잠금 안에서 max(number)+1로 배정한다. UNIQUE(photo_id,number)는 유지한다.
 
-### 승인 상태 전이 — 확인 요청
+### 승인 상태 전이 — 3번 확정 정책 반영
 
-| 상황 | 로컬 구현의 제안 규칙 |
+| 상황 | 현재 규칙 |
 |---|---|
 | 확정 인물 사진 | 현재 확정된 등장 멤버 전원 명시적 승인 |
 | 분석 미완료/실패 | 저장은 가능, 승인/최종본 차단 |
-| 불확실·미등록 얼굴이 남음 | 승인/최종본 차단, 인물 확인 요청 |
-| 사람이 없는 사진 | done + no_face + face_count=0 + 불확실 없음일 때 업로더 승인 |
-| 사람 없는 사진의 업로더 탈퇴 | 승인 대상 없음, 최종본 없음 |
+| 불확실·미등록 얼굴이 남음 | 임의 승인 대상에 추가하지 않음. 확정 멤버가 있으면 그 멤버만 승인 |
+| no_face 또는 현재 확정 멤버 0명 | 분석 완료 후 업로더 1명의 명시 승인 필요. 자동 최종화하지 않음 |
+| 업로더 승인 대체가 필요한데 업로더 탈퇴 | 승인 대상 없음, UPLOADER_LEFT, 최종본 없음 |
 | 새 버전 | 항상 승인 0개 |
 | 여러 버전 전원 승인 | 가장 큰 number의 버전 하나만 is_final=true |
 | 최신 최종본 승인 취소 | 해당 버전 해제. 과거 승인 충족 버전이 있으면 그것을 선택 |
@@ -114,6 +115,9 @@ DB `final` 컬럼·순환 FK·좋아요 집계는 사용하지 않는다.
 `members`는 `{id,display_name}[]`, `onSaved`는 `() => void`이다.
 컴포넌트 import: `import EditorPanel from './editor/EditorPanel'` (연결 파일 위치에 맞춰 상대경로 조정).
 2번 snapshot에서 10개 테스트/TypeScript/Vite 빌드, Chrome 모바일 fixture 조작을 확인했다.
+2번 `92a7fb37fd0b385658ed92a70fbd1da5bc3be6f5`에서 실제 PhotoDetail mount와 props를 확인했다.
+기본 테스트 20개와 build는 통과했지만 PhotoDetail.load()가 album-demo를 고정 요청하는 결함을
+별도 임시 회귀 테스트로 재현했다. 실제 photo.album_id 연결 수정 전 live 흐름 완료가 아니다.
 동일 사진의 협업 상태는 멤버 ID 변경·창 focus·visible 10초 간격·수동 새로고침으로 갱신된다.
 
 현재 확정 경로의 로컬 응답:
@@ -190,7 +194,7 @@ CSS는 약 0.213/0.715/0.072, Pillow Color는 약 0.299/0.587/0.114의 명도 �
    수락 기준: `_test` PostgreSQL에서 잠금·동시 저장·rollback 검사, 비공개 S3 별도 테스트 prefix에서 원본/보정 SHA 보존.
 2. `ZZIK:<RUN>:role-5:approval-transitions`, to=role-3, kind=decision.
    필요한 파일: 인물 수정/재분석/멤버 탈퇴 handler.
-   필요한 결과: no_face 업로더 승인·불확실 차단·최대 number 최종본·과거 최종본 fallback 승인, 원자적 무효화 hook 연결.
+   필요한 결과: no_face/확정 멤버 0명 업로더 승인·uncertain 대상 제외·최대 number 최종본·과거 최종본 fallback, 원자적 무효화 hook 연결.
    수락 기준: 인물 추가→기존 최종 해제→재승인, 탈퇴 후 재가입해도 옛 승인 부활 없음.
 3. `ZZIK:<RUN>:role-5:preview-download-contract`, to=role-3, kind=decision.
    필요한 파일: 사진 미리보기/다운로드 API.
