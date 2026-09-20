@@ -12,7 +12,7 @@ import './styles/detail.css'
 type Screen = 'landing' | 'reference' | 'album' | 'detail' | 'coverage'
 const mode = getDataMode()
 const api = createApiClient(mode)
-const ACTIVE_ALBUM_KEY = 'zzik.activeAlbum'
+const ACTIVE_ALBUM_KEY = `zzik.activeAlbum.${mode}`
 
 export function loadActiveAlbum(): ActiveAlbum | null {
   try {
@@ -56,7 +56,13 @@ export default function App() {
     }
   }, [activeAlbum])
   function openPhoto(id: string) { setPhotoId(id); setScreen('detail'); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  function preview() { setActiveAlbum({ albumId: 'album-demo', memberId: 'm-1', displayName: '나' }); setScreen('album') }
+  function preview() {
+    if (mode === 'api') {
+      window.location.assign(`${window.location.pathname}?data=mock`)
+      return
+    }
+    setActiveAlbum({ albumId: 'album-demo', memberId: 'm-1', displayName: '나' }); setScreen('album')
+  }
 
   return (
     <div className="app">

@@ -299,7 +299,7 @@ export class MockApiClient implements ApiClient {
 }
 
 export function getDataMode(): DataMode {
-  return new URLSearchParams(window.location.search).get('data') === 'api' ? 'api' : 'mock'
+  return new URLSearchParams(window.location.search).get('data') === 'mock' ? 'mock' : 'api'
 }
 
 export function createApiClient(mode: DataMode): ApiClient {

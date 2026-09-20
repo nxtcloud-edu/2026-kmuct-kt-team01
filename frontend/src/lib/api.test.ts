@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpApiClient, MockApiClient } from './api'
+import { getDataMode, HttpApiClient, MockApiClient } from './api'
 import { ApiError } from './types'
 
 describe('MockApiClient', () => {
@@ -26,6 +26,15 @@ describe('MockApiClient', () => {
 
     expect(changed.members[0]).toMatchObject({ member_id: 'm-4', source: 'manual' })
     expect(after.members[0]).toMatchObject({ member_id: 'm-4', source: 'manual' })
+  })
+})
+
+describe('data mode', () => {
+  it('uses the real API by default and mock data only when explicitly requested', () => {
+    window.history.replaceState({}, '', '/')
+    expect(getDataMode()).toBe('api')
+    window.history.replaceState({}, '', '/?data=mock')
+    expect(getDataMode()).toBe('mock')
   })
 })
 
