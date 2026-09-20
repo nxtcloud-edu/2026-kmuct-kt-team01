@@ -33,7 +33,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from .quality import (
     MAX_COMPARE_TARGET_FACES,
@@ -367,18 +367,24 @@ def validate_reference(image_bytes: bytes, *, settings: Settings | None = None) 
 def analyze(
     image_bytes: bytes,
     album_id: str,
-    members: Sequence[Mapping[str, Any]] | None = None,
+    members: Sequence[Any] | None = None,
     *,
     settings: Settings | None = None,
+    load_reference: Callable[[str], bytes] | None = None,
 ) -> dict[str, Any]:
     """사진 1장을 분석한다.
 
-    members 각 항목:
-        {"id": "<member uuid>", ...}  + 기준 얼굴 위치를 아래 중 하나로 준다
-          - "reference_bytes": bytes
-          - "reference_s3": {"bucket": ..., "key": ...}
-          - "reference_bucket" + "reference_key"
-        기준 얼굴이 없거나 위치를 알 수 없는 멤버는 건너뛰고 skipped_members 에 기록한다.
+    members 는 dict 여도 되고 SQLAlchemy 의 Member ORM 객체여도 된다
+    (worker 는 ORM 객체를 그대로 넘긴다). 각 멤버에서 다음을 읽는다:
+        id
+        기준 얼굴 위치는 아래 중 먼저 찾아지는 것을 쓴다
+          1. reference_bytes                      (raw bytes)
+          2. load_reference(reference_key)        (호출자가 넘긴 로더 = Storage.get)
+          3. reference_bucket / reference_s3 / 환경변수 S3_BUCKET + reference_key
+        셋 다 없으면 그 멤버만 건너뛰고 skipped_members 에 사유를 남긴다.
+
+    load_reference 를 넘기면 저장소 종류(local/S3)와 무관하게 동작한다.
+    STORAGE_BACKEND=local 환경에서 인물 매칭을 하려면 이 인자가 필요하다.
 
     반환 dict 는 계약대로 faces / face_count / shot_type / tags / quality /
     best_score / provider / mode / calls / elapsed_ms 를 포함한다.
@@ -388,14 +394,15 @@ def analyze(
 
     if settings.provider == PROVIDER_MOCK:
         return _analyze_mock(image_bytes, album_id, members, settings)
-    return _analyze_rekognition(image_bytes, album_id, members, settings)
+    return _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
 
 
 def _analyze_rekognition(
     image_bytes: bytes,
     album_id: str,
-    members: list[Mapping[str, Any]],
+    members: list[Any],
     settings: Settings,
+    load_reference: Callable[[str], bytes] | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     warnings: list[str] = []
@@ -429,10 +436,10 @@ def _analyze_rekognition(
 
     if face_count > 0:
         for member in members:
-            member_id = str(member.get("id") or "").strip()
+            member_id = str(_member_field(member, "id") or "").strip()
             if not member_id:
                 continue
-            source_image, skip_reason = _member_source_image(member)
+            source_image, skip_reason = _member_source_image(member, load_reference)
             if source_image is None:
                 skipped_members.append({"member_id": member_id, "reason": skip_reason or "NO_REFERENCE"})
                 continue
@@ -506,9 +513,28 @@ def _analyze_rekognition(
     }
 
 
-def _member_source_image(member: Mapping[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+def _member_field(member: Any, name: str) -> Any:
+    """dict 든 ORM 객체든 같은 방식으로 읽는다. worker 는 ORM 객체를 넘긴다."""
+    if isinstance(member, Mapping):
+        return member.get(name)
+    return getattr(member, name, None)
+
+
+def _member_source_image(
+    member: Any,
+    load_reference: Callable[[str], bytes] | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
     """CompareFaces 의 SourceImage 를 만든다. 만들 수 없으면 (None, 사유)."""
-    raw = member.get("reference_bytes")
+    raw = _member_field(member, "reference_bytes")
+    key = _member_field(member, "reference_key")
+
+    if not raw and key and load_reference is not None:
+        try:
+            raw = load_reference(str(key))
+        except Exception:  # noqa: BLE001 - 그 멤버만 건너뛴다
+            logger.warning("기준 셀카를 불러오지 못했습니다 (member=%s)", _member_field(member, "id"))
+            return None, "REFERENCE_LOAD_FAILED"
+
     if raw:
         try:
             prepared = prepare_image(raw)
@@ -516,13 +542,19 @@ def _member_source_image(member: Mapping[str, Any]) -> tuple[dict[str, Any] | No
             return None, exc.code
         return {"Bytes": prepared.data}, None
 
-    s3 = member.get("reference_s3") or {}
-    bucket = member.get("reference_bucket") or s3.get("bucket") or os.environ.get("S3_BUCKET")
-    key = member.get("reference_key") or s3.get("key")
+    s3 = _member_field(member, "reference_s3") or {}
+    bucket = (
+        _member_field(member, "reference_bucket")
+        or s3.get("bucket")
+        or os.environ.get("S3_BUCKET")
+    )
+    key = key or s3.get("key")
     if bucket and key:
         return {"S3Object": {"Bucket": str(bucket), "Name": str(key)}}, None
 
     if key and not bucket:
+        # STORAGE_BACKEND=local 이거나 S3_BUCKET 이 없을 때 여기로 온다.
+        # load_reference 를 넘기면 해결된다.
         return None, "NO_REFERENCE_BUCKET"
     return None, "NO_REFERENCE"
 
@@ -663,7 +695,7 @@ def _mock_reference_face_count(image_bytes: bytes, settings: Settings) -> tuple[
 def _analyze_mock(
     image_bytes: bytes,
     album_id: str,
-    members: list[Mapping[str, Any]],
+    members: list[Any],
     settings: Settings,
 ) -> dict[str, Any]:
     started = time.perf_counter()
@@ -674,7 +706,7 @@ def _analyze_mock(
     info = inspect_image(image_bytes)
     capture = extract_capture_metadata(image_bytes)
 
-    member_ids = [str(m.get("id")) for m in members if m.get("id")]
+    member_ids = [str(_member_field(m, "id")) for m in members if _member_field(m, "id")]
     warnings: list[str] = []
 
     if entry is not None:

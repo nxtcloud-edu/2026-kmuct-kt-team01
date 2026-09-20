@@ -9,15 +9,15 @@ import json
 
 import pytest
 
-from app.analysis import MODE_MOCK, AnalysisError, analyze, load_settings, validate_reference
-from app.quality import inspect_image
-from conftest import make_image
-from test_analysis import FakeRekognition, box, face
+from backend.app.analysis import MODE_MOCK, AnalysisError, analyze, load_settings, validate_reference
+from backend.app.quality import inspect_image
+from tests.conftest import make_image
+from tests.test_analysis import FakeRekognition, box, face
 
 
 def test_live_group_photo_example(jpeg_bytes, monkeypatch):
     """3번 worker 가 받게 될 실제(rekognition) 응답 형태."""
-    from app import analysis
+    from backend.app import analysis
 
     face_a, face_b = box(0.10, 0.20, 0.15, 0.20), box(0.55, 0.22, 0.14, 0.19)
     ref_a = make_image(width=200, height=200, color=(10, 20, 30))

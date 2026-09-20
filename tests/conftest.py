@@ -1,4 +1,4 @@
-"""역할 4 테스트 공통 설정.
+"""테스트 공통 설정 (역할 4가 추가).
 
 - DB/S3/AWS 를 전혀 건드리지 않는다. 공유 RDS·데모 데이터에 손대지 않는다.
 - 샘플 이미지는 Pillow 로 그 자리에서 만든 합성 이미지다(사람 얼굴 사진 아님).
@@ -7,16 +7,9 @@
 from __future__ import annotations
 
 import io
-import sys
-from pathlib import Path
 
 import pytest
-
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
-
-from PIL import Image  # noqa: E402
+from PIL import Image
 
 
 def make_image(

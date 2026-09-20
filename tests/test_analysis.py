@@ -11,8 +11,8 @@ import json
 import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
-from app import analysis
-from app.analysis import (
+from backend.app import analysis
+from backend.app.analysis import (
     AUTH_MESSAGE_KO,
     MODE_LIVE,
     MODE_MOCK,
@@ -24,7 +24,7 @@ from app.analysis import (
     load_settings,
     validate_reference,
 )
-from conftest import make_image
+from tests.conftest import make_image
 
 
 # --------------------------------------------------------------------------
@@ -408,6 +408,74 @@ def test_member_without_reference_is_skipped(jpeg_bytes, live_settings, use_fake
     assert result["calls"]["compare_faces"] == 0
 
 
+def test_orm_style_member_object_is_accepted(jpeg_bytes, live_settings, use_fake):
+    """worker 는 dict 가 아니라 SQLAlchemy Member 객체를 그대로 넘긴다."""
+
+    class Member:  # ORM 객체 흉내 (속성 접근만 지원)
+        def __init__(self, id, reference_key):
+            self.id = id
+            self.reference_key = reference_key
+            self.reference_indexed = True
+
+    target = box(0.1, 0.1, 0.2, 0.2)
+    ref = _ref(b"ref-a")
+    client = use_fake(
+        FakeRekognition(
+            faces=[face(target)],
+            compare={ref: [{"Similarity": 98.0, "Face": {"BoundingBox": target}}]},
+        )
+    )
+    result = analyze(
+        jpeg_bytes,
+        "album-1",
+        [Member("m1", "albums/a/members/m1/reference.jpg")],
+        settings=live_settings,
+        load_reference=lambda key: ref,
+    )
+    assert result["matched_member_ids"] == ["m1"]
+    _, kwargs = next(c for c in client.calls if c[0] == "compare_faces")
+    assert kwargs["SourceImage"] == {"Bytes": ref}
+
+
+def test_member_without_bucket_or_loader_is_skipped_with_clear_reason(jpeg_bytes, live_settings, use_fake):
+    """STORAGE_BACKEND=local 처럼 S3 버킷이 없고 로더도 없으면 그 멤버만 건너뛴다."""
+    use_fake(FakeRekognition(faces=[face(box(0.1, 0.1, 0.2, 0.2))]))
+    result = analyze(
+        jpeg_bytes,
+        "album-1",
+        [{"id": "m1", "reference_key": "albums/a/members/m1/reference.jpg"}],
+        settings=live_settings,
+    )
+    assert result["skipped_members"] == [{"member_id": "m1", "reason": "NO_REFERENCE_BUCKET"}]
+    assert result["face_count"] == 1  # 사진 분석 자체는 계속된다
+
+
+def test_reference_loader_failure_skips_only_that_member(jpeg_bytes, live_settings, use_fake):
+    target = box(0.1, 0.1, 0.2, 0.2)
+    good_ref = _ref(b"good")
+
+    def loader(key):
+        if key.endswith("bad.jpg"):
+            raise FileNotFoundError(key)
+        return good_ref
+
+    use_fake(
+        FakeRekognition(
+            faces=[face(target)],
+            compare={good_ref: [{"Similarity": 98.0, "Face": {"BoundingBox": target}}]},
+        )
+    )
+    result = analyze(
+        jpeg_bytes,
+        "album-1",
+        [{"id": "bad", "reference_key": "bad.jpg"}, {"id": "good", "reference_key": "good.jpg"}],
+        settings=live_settings,
+        load_reference=loader,
+    )
+    assert result["matched_member_ids"] == ["good"]
+    assert result["skipped_members"] == [{"member_id": "bad", "reason": "REFERENCE_LOAD_FAILED"}]
+
+
 def test_member_reference_via_s3_is_used(jpeg_bytes, live_settings, use_fake):
     target = box(0.1, 0.1, 0.2, 0.2)
     client = use_fake(
@@ -468,7 +536,7 @@ def test_mock_synthetic_match_can_be_disabled(jpeg_bytes):
 
 
 def test_mock_manifest_entry_is_used(tmp_path, jpeg_bytes):
-    from app.quality import inspect_image
+    from backend.app.quality import inspect_image
 
     digest = inspect_image(jpeg_bytes).content_hash
     manifest = tmp_path / "manifest.json"
@@ -504,7 +572,7 @@ def test_mock_manifest_entry_is_used(tmp_path, jpeg_bytes):
 
 
 def test_mock_manifest_can_express_no_face_and_multiple_faces(tmp_path):
-    from app.quality import inspect_image
+    from backend.app.quality import inspect_image
 
     no_face_img = make_image(color=(10, 10, 10))
     many_img = make_image(color=(200, 10, 10))
