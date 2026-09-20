@@ -171,11 +171,51 @@ mock 응답에는 `mock_source` 가 더 붙는다.
 
 mock 의 인물 매칭은 실제 인식 결과가 아니다. 정확도로 쓰지 않는다.
 
-## 8. 3번에게 필요한 것 (REQUESTED)
+## 8. 여행 요약 (`app.insights`, T3 부가 기능)
+
+```python
+from app.insights import summarize_album
+result = summarize_album(album_dict)
+```
+
+입력(3번이 집계해서 넘긴다. 사진 파일이나 파일명은 넘기지 않는다):
+
+```python
+{"name": "부산 여행", "photo_count": 4, "member_names": ["지민", "현우"],
+ "photos": [{"id", "best_score", "shot_type", "tags", "captured_at", "is_best"}, ...]}
+```
+
+출력: `{summary_lines(3줄), highlights[{photo_id, reason}], provider, mode,
+model_id, calls, elapsed_ms, usage, facts, warnings}`
+
+- **Bedrock 호출은 앨범당 1회**다. 사진 수와 무관하다.
+- **대표 사진 5장은 LLM 이 고르지 않는다.** `select_highlights()` 의 파이썬 규칙
+  (분석 완료 + 연사 탈락 제외 → 장면 다양성 → 상대 점수)으로 고르고 `reason` 을 남긴다.
+- `summary_lines` 는 **모델이 쓴 문장**이다. 사실 검증을 거치지 않았으므로 화면에
+  "AI 요약"으로 표시한다. 프롬프트에서 집계 사실 밖 내용·고유 장소명을 금지했다.
+- `SUMMARY_PROVIDER` 기본값은 `mock` 이고, mock 은 모델을 부르지 않고 집계 숫자로만
+  문장을 만든다(지어낸 내용 없음). `off` 면 `summary_lines` 가 빈 배열이다.
+- 오류 코드: `AWS_AUTH`(false) / `SUMMARY_MODEL_UNAVAILABLE`(false) /
+  `SUMMARY_THROTTLED`(true) / `SUMMARY_TRUNCATED`(true) / `SUMMARY_INVALID`(true) /
+  `SUMMARY_REFUSED`(false) / `SUMMARY_FAILED`(status>=500 이면 true)
+
+| 환경변수 | 기본값 |
+|---|---|
+| `SUMMARY_PROVIDER` | `mock` (`bedrock` / `off`) |
+| `BEDROCK_MODEL_ID` | `anthropic.claude-opus-5` |
+
+**실제 Bedrock 호출은 아직 한 번도 하지 않았다.** 계정에서 이 모델 ID 에 접근 권한이
+없으면 `SUMMARY_MODEL_UNAVAILABLE` 이 난다. 그때 `BEDROCK_MODEL_ID` 를 바꾼다.
+
+## 9. 3번에게 필요한 것 (REQUESTED)
 
 `backend/requirements.txt` 는 3번 소유다. 이 모듈은 다음이 필요하다:
 
 ```
-boto3        # 로컬 검증 버전 1.43.98
-Pillow       # 로컬 검증 버전 12.2.0
+boto3        # 로컬 검증 버전 1.43.98   (analysis.py)
+Pillow       # 로컬 검증 버전 12.2.0   (quality.py)
+anthropic[bedrock]  # 로컬 검증 버전 1.7.0  (insights.py, T3 요약만. 없으면 요약만 비활성)
 ```
+
+`anthropic` 은 요약 기능에서만 lazy import 한다. 설치하지 않아도 `analysis.py` 와
+`quality.py` 는 정상 동작하고, 요약만 `DEPENDENCY_MISSING` 으로 실패한다.
