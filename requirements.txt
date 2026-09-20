@@ -3,6 +3,8 @@ anthropic[bedrock]==1.7.0
 boto3==1.40.36
 fastapi==0.117.1
 itsdangerous==2.2.0
+numpy==2.5.3
+opencv-python-headless==4.11.0.86
 pillow==11.3.0
 psycopg[binary]==3.2.10
 pydantic-settings==2.10.1

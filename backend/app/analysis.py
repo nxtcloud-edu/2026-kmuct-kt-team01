@@ -7,17 +7,23 @@
 
 여기서 하지 않는 것:
   - DB 읽기/쓰기, S3 업로드, API 라우터, worker 트랜잭션 (전부 3번 몫)
-  - 얼굴 임베딩 자체 구현 (Rekognition 이 한다)
+  - 얼굴 임베딩 자체 구현 (Rekognition 이 한다. local_vision.py 는 예외 — AWS 권한이
+    막혔을 때 쓰는 오프라인 대체 구현이다)
 
 환경변수:
-  FACE_PROVIDER        rekognition | mock   (기본 mock)
-  AWS_REGION           기본 us-east-1
+  FACE_PROVIDER        rekognition | local | mock   (기본 mock)
+  AWS_REGION           기본 us-east-1 (rekognition 일 때만 씀)
   SIMILARITY_THRESHOLD 기본 90.0
   CANDIDATE_MARGIN     기본 5.0
   MOCK_MANIFEST_PATH   mock 정답 manifest 경로 (기본 backend/samples/mock_manifest.json)
 
 자동 폴백은 없다. FACE_PROVIDER=rekognition 인데 AWS 인증이 실패하면
-mock 성공으로 바꾸지 않고 AnalysisError 를 올린다.
+mock 이나 local 로 조용히 바꾸지 않고 AnalysisError 를 올린다.
+
+FACE_PROVIDER=local 은 AWS Rekognition 권한이 없을 때 쓰는 오프라인 대체 경로다
+(local_vision.py, OpenCV YuNet/SFace 사전학습 모델). AWS를 전혀 호출하지 않고
+mode 는 mock 이 아니라 live 다 — 진짜(로컬) 분석이지 샘플 데이터가 아니기 때문이다.
+자세한 정확도·한계는 local_vision.py 모듈 docstring 참고.
 
 Access Key 를 코드에 넣지 않는다. boto3 에는 region_name 만 주고
 자격증명은 표준 체인(EC2 인스턴스 역할)에 맡긴다.
@@ -35,6 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from . import local_vision
 from .quality import (
     MAX_COMPARE_TARGET_FACES,
     AnalysisError,
@@ -58,6 +65,7 @@ __all__ = [
     "validate_reference",
     "analyze",
     "PROVIDER_REKOGNITION",
+    "PROVIDER_LOCAL",
     "PROVIDER_MOCK",
     "MODE_LIVE",
     "MODE_MOCK",
@@ -65,6 +73,7 @@ __all__ = [
 ]
 
 PROVIDER_REKOGNITION = "rekognition"
+PROVIDER_LOCAL = "local"
 PROVIDER_MOCK = "mock"
 
 # 사진 응답의 mode 값. 화면은 mode == 'mock' 일 때 "샘플 분석" 배지를 띄운다.
@@ -102,10 +111,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     env = env if env is not None else os.environ
 
     provider = (env.get("FACE_PROVIDER") or PROVIDER_MOCK).strip().lower()
-    if provider not in {PROVIDER_REKOGNITION, PROVIDER_MOCK}:
+    if provider not in {PROVIDER_REKOGNITION, PROVIDER_LOCAL, PROVIDER_MOCK}:
         raise AnalysisError(
             "CONFIG_INVALID",
-            "FACE_PROVIDER 설정이 올바르지 않습니다 (rekognition 또는 mock)",
+            "FACE_PROVIDER 설정이 올바르지 않습니다 (rekognition, local 또는 mock)",
             retryable=False,
             details={"face_provider": provider},
         )
@@ -325,6 +334,10 @@ def validate_reference(image_bytes: bytes, *, settings: Settings | None = None) 
     if settings.provider == PROVIDER_MOCK:
         face_count, _entry = _mock_reference_face_count(image_bytes, settings)
         provider, mode = PROVIDER_MOCK, MODE_MOCK
+    elif settings.provider == PROVIDER_LOCAL:
+        prepared = prepare_image(image_bytes)
+        face_count = len(local_vision.detect_faces(prepared.data))
+        provider, mode = PROVIDER_LOCAL, MODE_LIVE
     else:
         prepared = prepare_image(image_bytes)
         client = _rekognition_client(settings.region)
@@ -394,6 +407,8 @@ def analyze(
 
     if settings.provider == PROVIDER_MOCK:
         return _analyze_mock(image_bytes, album_id, members, settings)
+    if settings.provider == PROVIDER_LOCAL:
+        return _analyze_local(image_bytes, album_id, members, settings, load_reference)
     return _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
 
 
@@ -498,6 +513,115 @@ def _analyze_rekognition(
         "calls": {**calls, "total": sum(calls.values())},
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
         # 계약 밖 부가 정보 (3번이 저장 여부를 결정한다)
+        "matched_member_ids": matched_member_ids,
+        "skipped_members": skipped_members,
+        "warnings": warnings,
+        "image": {
+            "mime": prepared.original.mime,
+            "width": prepared.original.width,
+            "height": prepared.original.height,
+            "byte_size": prepared.original.byte_size,
+            "content_hash": prepared.original.content_hash,
+            "downscaled_for_analysis": prepared.downscaled,
+        },
+        "capture": capture.to_dict(),
+    }
+
+
+def _analyze_local(
+    image_bytes: bytes,
+    album_id: str,
+    members: list[Any],
+    settings: Settings,
+    load_reference: Callable[[str], bytes] | None = None,
+) -> dict[str, Any]:
+    """local_vision.py(OpenCV YuNet/SFace)로 _analyze_rekognition 과 같은 판정 로직을 돌린다.
+
+    AWS 를 전혀 부르지 않는다. 매칭 판정(_resolve_faces)·IoU 대응(_best_iou_face)은
+    Rekognition 경로와 완전히 같은 함수를 그대로 재사용한다 — provider 만 바뀔 뿐
+    "몇 위가 얼마나 확실해야 확정인지"의 규칙은 한 곳(_resolve_faces)에만 있다.
+
+    S3Object 참조(reference_bucket/reference_s3 만 있고 raw bytes 가 없는 경우)는
+    로컬 분석기가 S3 를 직접 읽지 않으므로 처리할 수 없다 — 그 멤버만 건너뛴다
+    (STORAGE_BACKEND=local 이면 worker.analysis_members() 가 이미 raw bytes 를
+    채워 넣으므로 보통 여기 걸리지 않는다).
+    """
+    started = time.perf_counter()
+    warnings: list[str] = []
+    calls = {"detect_faces": 0, "compare_faces": 0, "detect_labels": 0}
+
+    prepared = prepare_image(image_bytes)
+    warnings.extend(prepared.warnings)
+
+    # 1) DetectFaces
+    face_details = local_vision.detect_faces(prepared.data)
+    calls["detect_faces"] += 1
+    face_count = len(face_details)
+
+    if face_count > MAX_COMPARE_TARGET_FACES:
+        warnings.append(
+            f"얼굴이 {face_count}개로 CompareFaces 비교 한도({MAX_COMPARE_TARGET_FACES}개)를 넘습니다. "
+            "일부 얼굴은 인물 매칭에서 빠질 수 있습니다."
+        )
+
+    # 2) 얼굴이 있을 때만 CompareFaces.
+    candidates: dict[int, list[tuple[float, str]]] = {}
+    skipped_members: list[dict[str, str]] = []
+
+    if face_count > 0:
+        for member in members:
+            member_id = str(_member_field(member, "id") or "").strip()
+            if not member_id:
+                continue
+            source_image, skip_reason = _member_source_image(member, load_reference)
+            if source_image is None:
+                skipped_members.append({"member_id": member_id, "reason": skip_reason or "NO_REFERENCE"})
+                continue
+            if "Bytes" not in source_image:
+                # S3Object 참조. 로컬 분석기는 S3 를 직접 못 읽는다.
+                skipped_members.append({"member_id": member_id, "reason": "NO_REFERENCE_BUCKET"})
+                continue
+            calls["compare_faces"] += 1
+            try:
+                matches = local_vision.compare_faces(
+                    source_image["Bytes"], prepared.data, settings.candidate_threshold
+                )
+            except AnalysisError as exc:
+                if exc.code in _MEMBER_SKIPPABLE_CODES:
+                    skipped_members.append({"member_id": member_id, "reason": exc.code})
+                    continue
+                raise
+
+            for match in matches:
+                similarity = float(match.get("Similarity") or 0.0)
+                match_box = (match.get("Face") or {}).get("BoundingBox") or {}
+                face_index = _best_iou_face(match_box, face_details)
+                if face_index is None:
+                    continue
+                candidates.setdefault(face_index, []).append((similarity, member_id))
+
+    faces, matched_member_ids = _resolve_faces(face_details, candidates, settings)
+
+    # 3) DetectLabels — 얼굴(+목/어깨) 영역은 색상 통계에서 뺀다.
+    face_boxes = [detail["BoundingBox"] for detail in face_details]
+    labels = local_vision.detect_labels(prepared.data, min_confidence=80.0, face_boxes=face_boxes)
+    calls["detect_labels"] += 1
+    tags = map_labels_to_tags(labels)
+
+    quality = face_metrics(face_details)
+    capture = extract_capture_metadata(image_bytes)
+
+    return {
+        "faces": faces,
+        "face_count": face_count,
+        "shot_type": shot_type_for(face_count),
+        "tags": tags,
+        "quality": quality,
+        "best_score": compute_best_score(quality),
+        "provider": PROVIDER_LOCAL,
+        "mode": MODE_LIVE,
+        "calls": {**calls, "total": sum(calls.values())},
+        "elapsed_ms": int((time.perf_counter() - started) * 1000),
         "matched_member_ids": matched_member_ids,
         "skipped_members": skipped_members,
         "warnings": warnings,

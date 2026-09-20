@@ -32,7 +32,7 @@
 | 역할 1 | `infra/`, `scripts/`, `nginx.conf`, `systemd/` |
 | 역할 2 | `frontend/package.json`, `frontend/src/App.tsx`, 라우팅, 공통 스타일 |
 | 역할 3 | `backend/app/models.py`, Alembic, Python requirements |
-| 역할 4 | `backend/app/analysis.py`, `backend/app/quality.py` |
+| 역할 4 | `backend/app/analysis.py`, `backend/app/quality.py`, `backend/app/local_vision.py`, `backend/models/` |
 | 역할 5 | `backend/app/edits.py` |
 
 소유하지 않은 파일 변경은 GitHub 이슈로 담당자에게 요청하며 병행 덮어쓰지 않는다.
@@ -44,3 +44,6 @@
 - EC2·RDS·S3와 인스턴스 프로파일 식별자는 확보했다.
 - 실제 DB/S3/Rekognition/STS preflight와 서비스 기동은 Session Manager에서 실행 대기 중이다.
 - 포트 8000은 직접 API 확인을 위한 임시 진단 포트다. 가능하면 테스트 클라이언트 `/32`로 제한하고 통합 후 닫는다. 정상 사용자 트래픽은 Nginx의 80 포트를 사용한다.
+- 발표·심사 화면에서 "샘플 분석" 배지 없이 실제 얼굴 인식이 꼭 필요한데 AWS 권한이 끝내 안 풀리면
+  `FACE_PROVIDER=local`(OpenCV 로컬 모델, AWS 미사용)로 대체할 수 있다. `backend/app/local_vision.py`
+  docstring과 README `FACE_PROVIDER` 표 참고.
