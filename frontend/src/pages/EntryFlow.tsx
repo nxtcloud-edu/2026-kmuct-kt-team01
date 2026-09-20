@@ -3,11 +3,12 @@ import type { ApiClient } from '../lib/api'
 import { ApiError, type ActiveAlbum } from '../lib/types'
 import { ArrowIcon, CameraIcon, CheckIcon, SparkleIcon, UsersIcon } from '../components/icons'
 
-export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum) => void; onPreview: () => void }) {
+export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum, resumed: boolean) => void; onPreview: () => void }) {
   const [form, setForm] = useState<'join' | 'create'>('join')
   const [name, setName] = useState('')
   const [albumName, setAlbumName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
+  const [passcode, setPasscode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -18,14 +19,20 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
       setError('입력하지 않은 항목이 있어요.')
       return
     }
+    if (passcode.trim().length < 4) {
+      setError('비밀번호를 4자 이상 입력해 주세요.')
+      return
+    }
     setLoading(true)
     try {
       const displayName = name.trim()
       const result = form === 'join'
-        ? await client.joinAlbum(inviteCode.trim(), displayName)
-        : await client.createAlbum(albumName.trim(), displayName)
+        ? await client.joinAlbum(inviteCode.trim(), displayName, passcode.trim())
+        : await client.createAlbum(albumName.trim(), displayName, passcode.trim())
       const code = 'invite_code' in result && typeof result.invite_code === 'string' ? result.invite_code : undefined
-      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName, ...(code ? { inviteCode: code } : {}) })
+      // 기준 사진까지 등록해둔 멤버로 다시 들어온 경우에만 셀카 단계를 건너뛴다.
+      const resumed = Boolean(result.rejoined && result.reference_indexed)
+      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName, ...(code ? { inviteCode: code } : {}) }, resumed)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '요청을 처리하지 못했어요.')
     } finally {
@@ -50,6 +57,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
           <div className="form-heading"><span className="camera-mark"><CameraIcon /></span><div><h2>{form === 'join' ? '초대받은 앨범이 있나요?' : '새로운 여행을 시작할까요?'}</h2><p>{form === 'join' ? '친구에게 받은 초대 코드를 입력하세요.' : '여행 이름과 내 이름만 있으면 준비 끝!'}</p></div></div>
           {form === 'join' ? <label>초대 코드<input aria-label="초대 코드" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="받은 코드를 그대로 붙여넣으세요" /><small>대소문자를 구분해요.</small></label> : <label>앨범 이름<input value={albumName} onChange={(event) => setAlbumName(event.target.value)} placeholder="예: 우리들의 제주" /></label>}
           <label>내 이름<input value={name} onChange={(event) => setName(event.target.value)} placeholder="앨범에 표시될 이름" /></label>
+          <label>비밀번호<input aria-label="비밀번호" type="password" value={passcode} onChange={(event) => setPasscode(event.target.value)} autoComplete={form === 'join' ? 'current-password' : 'new-password'} placeholder="4자 이상" /><small>{form === 'join' ? '같은 이름과 비밀번호로 다시 들어오면 내 사진이 그대로 있어요.' : '나중에 다시 들어올 때 필요해요.'}</small></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button primary full" disabled={loading}>{loading ? '잠시만요…' : form === 'join' ? '앨범 들어가기' : '앨범 만들기'}<ArrowIcon /></button>
           <button type="button" className="preview-link" onClick={onPreview}>샘플 흐름 먼저 둘러보기</button>

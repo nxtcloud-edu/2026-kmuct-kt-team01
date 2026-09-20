@@ -15,8 +15,10 @@ describe('runtime album identifiers', () => {
     fireEvent.click(screen.getByRole('tab', { name: '새 앨범' }))
     fireEvent.change(screen.getByLabelText('앨범 이름'), { target: { value: '여행' } })
     fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: '1234' } })
     fireEvent.click(screen.getByRole('button', { name: /앨범 만들기/ }))
-    await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ albumId: 'album-real', memberId: 'owner', displayName: '민지', inviteCode: 'aB9_xY-2' }))
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ albumId: 'album-real', memberId: 'owner', displayName: '민지', inviteCode: 'aB9_xY-2' }, false))
+    expect(createAlbum).toHaveBeenCalledWith('여행', '민지', '1234')
   })
   it('passes the joined album and member IDs into the app flow', async () => {
     const joinAlbum = vi.fn().mockResolvedValue({ album_id: 'album-real', member_id: 'member-real' })
@@ -25,12 +27,41 @@ describe('runtime album identifiers', () => {
 
     fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: '  aB9_xY-2  ' } })
     fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: 'pw12' } })
     fireEvent.click(screen.getByRole('button', { name: /앨범 들어가기/ }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith({
       albumId: 'album-real', memberId: 'member-real', displayName: '민지',
-    }))
-    expect(joinAlbum).toHaveBeenCalledWith('aB9_xY-2', '민지')
+    }, false))
+    expect(joinAlbum).toHaveBeenCalledWith('aB9_xY-2', '민지', 'pw12')
+  })
+
+  it('skips the selfie step when an existing member returns with a reference photo', async () => {
+    const joinAlbum = vi.fn().mockResolvedValue({
+      album_id: 'album-real', member_id: 'member-real', rejoined: true, reference_indexed: true,
+    })
+    const onComplete = vi.fn()
+    render(<Landing client={{ joinAlbum } as unknown as ApiClient} onComplete={onComplete} onPreview={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: 'aB9_xY-2' } })
+    fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: 'pw12' } })
+    fireEvent.click(screen.getByRole('button', { name: /앨범 들어가기/ }))
+
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ memberId: 'member-real' }), true))
+  })
+
+  it('refuses to submit without a long enough passcode', async () => {
+    const joinAlbum = vi.fn()
+    render(<Landing client={{ joinAlbum } as unknown as ApiClient} onComplete={() => {}} onPreview={() => {}} />)
+
+    fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: 'aB9_xY-2' } })
+    fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: /앨범 들어가기/ }))
+
+    await screen.findByRole('alert')
+    expect(joinAlbum).not.toHaveBeenCalled()
   })
 
   it('uses runtime IDs for album requests and the mine filter', async () => {

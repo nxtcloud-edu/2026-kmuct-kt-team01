@@ -52,7 +52,8 @@ def make_client(tmp_path) -> tuple[TestClient, object]:
 
 def create_album(client: TestClient, name: str = "부산 여행") -> dict[str, str]:
     response = client.post(
-        "/api/albums", json={"name": name, "display_name": "민지"}
+        "/api/albums",
+        json={"name": name, "display_name": "민지", "passcode": "owner-pass"},
     )
     assert response.status_code == 201
     assert response.json()["member_id"]
@@ -214,7 +215,11 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
     invitee = TestClient(app)
     joined = invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     )
     assert joined.status_code == 200
     assert joined.json()["member_id"]
@@ -302,7 +307,11 @@ def test_role5_edit_approval_and_final_zip_preserve_original(tmp_path) -> None:
     invitee = TestClient(app)
     assert invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     ).status_code == 200
     members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
     owner_id, invitee_id = [item["id"] for item in members]
@@ -441,7 +450,11 @@ def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -
     invitee = TestClient(app)
     invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     )
     members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
     owner_id, invitee_id = [item["id"] for item in members]

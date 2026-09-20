@@ -84,6 +84,9 @@ class Member(Base):
     reference_indexed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    # 앨범 안에서 "같은 사람"임을 확인하는 비밀번호 해시 (backend/app/passcodes.py).
+    # 비밀번호가 생기기 전에 참여한 멤버는 NULL 로 남는다.
+    passcode_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     album: Mapped[Album] = relationship(back_populates="members")
     uploaded_photos: Mapped[list[Photo]] = relationship(back_populates="uploader")

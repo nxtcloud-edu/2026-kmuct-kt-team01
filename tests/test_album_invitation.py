@@ -8,12 +8,12 @@ def test_mixed_case_invitation_joins_same_album_with_independent_session(tmp_pat
     owner, app = make_client(tmp_path)
     try:
         with owner, TestClient(app) as guest:
-            created = owner.post('/api/albums', json={'name': 'Trip', 'display_name': 'Owner'})
+            created = owner.post('/api/albums', json={'name': 'Trip', 'display_name': 'Owner', 'passcode': 'owner-pass'})
             assert created.status_code == 201
             album = created.json()
             assert album['invite_code'] == 'aB9_xY-2zQ1'
             assert guest.get(f"/api/albums/{album['album_id']}").status_code == 401
-            joined = guest.post('/api/albums/join', json={'invite_code': album['invite_code'], 'display_name': 'Guest'})
+            joined = guest.post('/api/albums/join', json={'invite_code': album['invite_code'], 'display_name': 'Guest', 'passcode': 'guest-pass'})
             assert joined.status_code == 200
             assert joined.json()['album_id'] == album['album_id']
             assert joined.json()['member_id'] != album['member_id']

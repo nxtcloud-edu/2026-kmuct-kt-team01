@@ -18,9 +18,18 @@ export interface ReferenceResult {
   face_count: number
 }
 
+export interface JoinResult {
+  album_id: string
+  member_id: string
+  invite_code?: string
+  /** 기존 멤버로 다시 들어왔는지. 기준 사진 단계를 건너뛸지 판단하는 데 쓴다. */
+  rejoined?: boolean
+  reference_indexed?: boolean
+}
+
 export interface ApiClient {
-  createAlbum(name: string, displayName: string): Promise<{ album_id: string; member_id: string; invite_code: string }>
-  joinAlbum(inviteCode: string, displayName: string): Promise<{ album_id: string; member_id: string }>
+  createAlbum(name: string, displayName: string, passcode: string): Promise<JoinResult & { invite_code: string }>
+  joinAlbum(inviteCode: string, displayName: string, passcode: string): Promise<JoinResult>
   getAlbum(id: string): Promise<Album>
   uploadReference(file: File): Promise<ReferenceResult>
   listPhotos(albumId: string, filters: PhotoFilters): Promise<PageResult<Photo>>
@@ -85,15 +94,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export class HttpApiClient implements ApiClient {
-  createAlbum(name: string, displayName: string) {
-    return request<{ album_id: string; member_id: string; invite_code: string }>('/albums', {
-      method: 'POST', body: JSON.stringify({ name, display_name: displayName }),
+  createAlbum(name: string, displayName: string, passcode: string) {
+    return request<JoinResult & { invite_code: string }>('/albums', {
+      method: 'POST', body: JSON.stringify({ name, display_name: displayName, passcode }),
     })
   }
 
-  joinAlbum(inviteCode: string, displayName: string) {
-    return request<{ album_id: string; member_id: string }>('/albums/join', {
-      method: 'POST', body: JSON.stringify({ invite_code: inviteCode, display_name: displayName }),
+  joinAlbum(inviteCode: string, displayName: string, passcode: string) {
+    return request<JoinResult>('/albums/join', {
+      method: 'POST', body: JSON.stringify({ invite_code: inviteCode, display_name: displayName, passcode }),
     })
   }
 
@@ -228,7 +237,7 @@ export class MockApiClient implements ApiClient {
   private photos = makePhotos()
 
   async createAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1', invite_code: 'JEJU26' } }
-  async joinAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1' } }
+  async joinAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1', rejoined: false, reference_indexed: false } }
 
   async getAlbum(): Promise<Album> {
     await delay()

@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
 from backend.app.auth import SessionCodec
 from backend.app.errors import ApiError, error_body
+from backend.app.passcodes import hash_passcode, verify_passcode
 from backend.app.phash import compute_dhash
 from backend.app.models import (
     Album,
@@ -162,7 +163,11 @@ def create_album(
     db: Annotated[Session, Depends(get_db)],
 ) -> AlbumCreated:
     album = Album(name=payload.name.strip(), invite_code=secrets.token_urlsafe(8))
-    member = Member(album=album, display_name=payload.display_name.strip())
+    member = Member(
+        album=album,
+        display_name=payload.display_name.strip(),
+        passcode_hash=hash_passcode(payload.passcode),
+    )
     db.add_all([album, member])
     db.commit()
     set_session_cookie(request, response, member.id)
@@ -181,7 +186,41 @@ def join_album(
     album = db.scalar(select(Album).where(Album.invite_code == payload.invite_code))
     if album is None:
         raise ApiError(404, "INVITE_NOT_FOUND", "초대 코드를 찾을 수 없습니다.")
-    member = Member(album_id=album.id, display_name=payload.display_name.strip())
+
+    display_name = payload.display_name.strip()
+    # 앨범 안에서는 이름이 곧 신원이다. 같은 이름이 이미 있으면 비밀번호로 본인을 확인하고
+    # 그 멤버로 다시 들어간다. 기준 사진과 올린 사진이 그대로 따라온다.
+    existing = db.scalar(
+        select(Member)
+        .where(Member.album_id == album.id, Member.display_name == display_name)
+        .order_by(Member.joined_at)
+    )
+    if existing is not None:
+        if existing.passcode_hash is None:
+            # 비밀번호 기능 전에 참여한 멤버다. 이 이름으로 처음 다시 들어오는 사람이
+            # 비밀번호를 정한다. 초대 코드를 아는 사람만 여기 닿을 수 있다는 가정에 기댄다.
+            existing.passcode_hash = hash_passcode(payload.passcode)
+            db.commit()
+        elif not verify_passcode(payload.passcode, existing.passcode_hash):
+            raise ApiError(
+                403,
+                "PASSCODE_MISMATCH",
+                "이미 있는 이름이에요. 비밀번호가 맞지 않으면 다른 이름으로 참여해 주세요.",
+            )
+        set_session_cookie(request, response, existing.id)
+        return AlbumCreated(
+            album_id=album.id,
+            invite_code=album.invite_code,
+            member_id=existing.id,
+            rejoined=True,
+            reference_indexed=existing.reference_indexed,
+        )
+
+    member = Member(
+        album_id=album.id,
+        display_name=display_name,
+        passcode_hash=hash_passcode(payload.passcode),
+    )
     db.add(member)
     db.commit()
     set_session_cookie(request, response, member.id)
