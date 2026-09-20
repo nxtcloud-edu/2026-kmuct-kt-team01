@@ -86,12 +86,10 @@ def test_unpictured_album_member_cannot_approve(env):
 
 
 @pytest.mark.parametrize("changes,reason", [
-    ({"confirmed_member_ids": frozenset()}, "NO_CONFIRMED_MEMBERS"),
-    ({"has_unresolved_faces": True}, "UNRESOLVED_FACES"),
     ({"analysis_status": "failed"}, "ANALYSIS_NOT_READY"),
     ({"analysis_status": "processing"}, "ANALYSIS_NOT_READY"),
 ])
-def test_unknown_uncertain_and_unanalyzed_photos_do_not_become_final(env, changes, reason):
+def test_unanalyzed_photos_do_not_become_final(env, changes, reason):
     service, repo, _, photo, members = env
     repo.seed(replace(photo, **changes))
     edit = service.create(photo.id, members[0], EditSettings())
@@ -101,13 +99,45 @@ def test_unknown_uncertain_and_unanalyzed_photos_do_not_become_final(env, change
         service.approve(edit["id"], members[0])
 
 
-def test_no_face_requires_uploader_explicit_approval(env):
+@pytest.mark.parametrize("has_confirmed_members", [False, True])
+def test_no_face_requires_uploader_explicit_approval(env, has_confirmed_members):
     service, repo, _, photo, members = env
-    repo.seed(replace(photo, face_count=0, shot_type="no_face", confirmed_member_ids=frozenset()))
+    confirmed = photo.confirmed_member_ids if has_confirmed_members else frozenset()
+    repo.seed(replace(photo, face_count=0, shot_type="no_face", confirmed_member_ids=confirmed))
     edit = service.create(photo.id, members[1], EditSettings())
     assert edit["required_member_ids"] == [members[0]]
     assert not edit["is_final"]
     assert service.approve(edit["id"], members[0])["is_final"]
+
+
+@pytest.mark.parametrize("unresolved", [False, True])
+def test_no_confirmed_members_requires_uploader_even_with_unregistered_faces(env, unresolved):
+    service, repo, _, photo, members = env
+    repo.seed(replace(photo, confirmed_member_ids=frozenset(), has_unresolved_faces=unresolved))
+    edit = service.create(photo.id, members[1], EditSettings())
+    assert edit["required_member_ids"] == [members[0]]
+    assert not edit["is_final"]
+    with pytest.raises(EditError) as error:
+        service.approve(edit["id"], members[1])
+    assert error.value.code == "NOT_APPROVER"
+    assert service.approve(edit["id"], members[0])["is_final"]
+
+
+def test_uncertain_faces_do_not_add_approvers_or_block_confirmed_members(env):
+    service, repo, _, photo, members = env
+    repo.seed(replace(photo, confirmed_member_ids=frozenset([members[1]]), has_unresolved_faces=True))
+    edit = service.create(photo.id, members[0], EditSettings())
+    assert edit["required_member_ids"] == [members[1]]
+    assert service.approve(edit["id"], members[1])["is_final"]
+
+
+def test_uploader_fallback_blocks_when_uploader_has_left(env):
+    service, repo, _, photo, members = env
+    repo.seed(replace(photo, confirmed_member_ids=frozenset(), active_member_ids=frozenset([members[1]])))
+    edit = service.create(photo.id, members[1], EditSettings())
+    assert edit["required_member_ids"] == []
+    assert edit["approval_blocked_reason"] == "UPLOADER_LEFT"
+    assert not edit["is_final"]
 
 
 @pytest.mark.parametrize("change", ["add", "exclude", "leave"])

@@ -148,7 +148,7 @@ class PhotoSnapshot:
     active_member_ids: frozenset[str]
     confirmed_member_ids: frozenset[str]
     # Adapter must exclude uncertain/excluded matches from confirmed_member_ids.
-    # Default is conservative until the backend explicitly establishes certainty.
+    # Informational only; unresolved faces are not approvers (team decision #3).
     has_unresolved_faces: bool = True
     provider: str | None = None
     mode: str | None = None
@@ -217,15 +217,12 @@ def edit_key(photo: PhotoSnapshot, number: int) -> str:
 def approval_targets(photo: PhotoSnapshot) -> tuple[frozenset[str], str | None]:
     if photo.analysis_status != "done":
         return frozenset(), "ANALYSIS_NOT_READY"
-    if photo.has_unresolved_faces:
-        return frozenset(), "UNRESOLVED_FACES"
-    if photo.face_count == 0 and photo.shot_type == "no_face":
+    targets = photo.confirmed_member_ids & photo.active_member_ids
+    # Role 3's policy: no_face OR no confirmed members requires the uploader.
+    if photo.shot_type == "no_face" or not targets:
         if photo.uploader_member_id in photo.active_member_ids:
             return frozenset([photo.uploader_member_id]), None
         return frozenset(), "UPLOADER_LEFT"
-    targets = photo.confirmed_member_ids & photo.active_member_ids
-    if not targets:
-        return targets, "NO_CONFIRMED_MEMBERS"
     return targets, None
 
 

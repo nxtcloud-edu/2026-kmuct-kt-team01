@@ -1,7 +1,28 @@
 # ROLE-05 작업 상태
 
-현재 단계: **보정·버전·승인 서버와 EditorPanel 로컬 구현/검증 완료, 팀 통합 대기**.
+현재 단계: **3번 확정 승인 정책 반영 및 통합 후보 호환성 검사 완료, 운영 어댑터 연결 대기**.
 전체 역할 완료나 배포 완료가 아니다.
+
+## 최신 인계 — 2026-09-20
+
+- 직전 공개 head: `a9444e15390a2d42d5c41c1c5deab31bc278bd0c`. 이번 후속 커밋의 full SHA는 #3 READY 댓글로 전달한다.
+- 3번 [ACK/정책 결정](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3#issuecomment-5746567388)을 반영했다.
+  분석 완료 후 no_face 또는 유효한 확정 멤버가 0명이면 업로더 1명 승인. uncertain은 대상으로 추가하지 않으며 전역 차단 조건도 아니다.
+  분석 미완료/업로더 탈퇴는 차단하고, 새 버전 자동 승인은 없다. 최종본 최대 number 및 취소 시 과거 충족본 fallback 유지.
+- 새 정책 네 회귀 사례가 기존 코드에서 실패함을 확인 후 수정. no_face와 확정 멤버가 함께 있는 경우도 추가 검사.
+- Python 3.13 역할 전용 의존성: `pytest backend/tests/role5 -q -W error` **51 passed**.
+- `assemble/20260920` **3e6fa6b346c9912ed9e9cb4ec717dbfe93b9f334**를 임시 snapshot으로 추출하고 최신 edits.py/role5 테스트를 추가했다.
+  후보의 실제 requirements(Pillow 11.3.0, FastAPI 0.117.1)로 별도 가상환경에서 **163 passed**.
+  Starlette/AnyIO의 BlockingPortal DeprecationWarning 1건. 라이브러리 상향 없이도 역할 코드 호환 확인.
+  이것은 코드·테스트 합성 검사이며 미구현 운영 edit adapter까지 연결된 E2E 검사는 아니다.
+- ROLE-02 **92a7fb37fd0b385658ed92a70fbd1da5bc3be6f5** snapshot 기본 `npm test` **20 passed**, `npm run build` 통과.
+  PhotoDetail에 EditorPanel props 연결을 확인했다. 추가 회귀 검사에서 `getAlbum(photo.album_id)` 대신
+  `getAlbum('album-demo')` 호출을 재현했다(별도 임시 테스트 1 failed). #7로 실제 앨범 ID 연결 수정을 요청한다.
+  이 테스트는 역할 2 소유 파일에 커밋하지 않았다. 전체 live 상세 흐름은 미완료다.
+- 3번의 운영 어댑터와 원본 보존 #4, 미리보기/보정본 다운로드 계약은 남아 있다.
+  PostgreSQL 동시성·실제 S3·AWS·전체 브라우저 E2E는 미검증이다.
+- 후보 병합 시 .gitignore add/add 충돌은 assemble 쪽이 역할 5의 여섯 패턴을 모두 포함한다는 ROLE-02 정보를 전달받았다.
+  최종 통합 및 병합은 ROLE-03가 수행한다.
 
 ## Git·외부 상태
 
@@ -31,11 +52,11 @@
 | 네 개 보정/승인 API | 완료(주입형 router) | ASGI 경유 요청/오류/권한 검사 |
 | 중복 승인 방지·취소·최종본 하나 | 완료(계약 fixture) | 명시 승인 집계·최대 number·과거 후보 fallback |
 | 인물/멤버 변경 무효화 | 부분 | hook+원자적 fixture 전이 검사 완료, 3번 handler 연결 필요 |
-| 불확실 인물·no_face 업로더 승인 | 부분 | 로컬 정책 검사 완료, 3·4번 DTO 매핑/정책 확인 필요 |
+| 불확실 인물·no_face 업로더 승인 | 부분 | 3번 확정 정책 반영/검사 완료, 운영 DTO 매핑 필요 |
 | 파일·설정·승인·최종 상태 재시작 후 보존 | 완료(계약 fixture) | SQLite `_test.sqlite3`와 임시 파일 재개방 |
 | 실제 PostgreSQL·S3·서명 세션 연결 | 부분 | 3번 기반/모델 확인, 보정 전용 어댑터 연결 요청 #3 |
 | 원본/보정본 실제 다운로드 | 미검증 | 로컬 저장 파일 바이트 검증만 완료, 다운로드 API 통합 필요 |
-| EditorPanel·모바일 UI | 완료(컴포넌트/fixture) | 10개 테스트, 실제 Chrome 390px 저장→승인→취소, 전체 상세 화면 mount는 #7 |
+| EditorPanel·모바일 UI | 부분(통합) | mount 확인, 컴포넌트 fixture 통과. 상세 album-demo 고정 요청 수정 필요 #7 |
 | CSS/서버 미리보기 일치 | 부분 | 합성 RGB 비교에서 차이 확인, 서버 미리보기 계약 결정 필요 |
 | 2번 PR 교차 검토·2번 피드백 반영 | 부분 | #2의 지정 head/API diff에 COMMENT 리뷰 완료, 후속 피드백 대기 |
 | 최종 후보 E2E·EC2 재시작·2GB 실측 | 미검증 | 배포/후보 없음 |
@@ -95,16 +116,16 @@
 
 1. 1번: 최종 환경의 프로세스 수·메모리 예산 확인. BASE/RUN은 확인 완료.
 2. 3번: 운영 repository/storage/세션 주입, 공통 의존성 반영, 인물 변경 hook 연결.
-3. 3·4번: uncertain/미등록 상태를 PhotoSnapshot에 매핑하는 기준, 승인 대상/최종본 선택 규칙 확인.
+3. 3·4번: 확정/제외 인물을 PhotoSnapshot에 정확히 매핑. 승인 대상/최종본 정책은 #3 결정 반영 완료.
 4. 2·3번: CSS 근사와 서버 권위 렌더 차이 처리, 인증된 미리보기·보정본 다운로드 API 결정.
-5. 2번: 제공된 기반에 EditorPanel mount, 실제 API 모바일 교차 검토.
+5. 2번: mount 완료. 실제 앨범 ID 전달 수정 후 실제 API 모바일 교차 검토.
 6. 커밋/push 사용자 승인 완료. 팀 통합과 후속 검토를 진행한다.
 
 ## 협업 요청 상태
 
-- [#3 backend-adapters](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3): REQUESTED. 보정 어댑터·정책·원자적 무효화 연결.
+- [#3 backend-adapters](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3): ACK 수신, 정책 반영 소스 READY. 운영 어댑터/원자적 무효화 연결은 미완료.
 - [#4 preserve-upload-original](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/4): REQUESTED. 업로드 raw 대신 재인코딩 객체가 저장되는 원본 손실 문제.
-- [#7 editor-integration](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/7): REQUESTED. EditorPanel mount와 서버 미리보기/다운로드 결정.
+- [#7 editor-integration](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/7): 프론트 mount 응답 수신/소스 확인. 실제 앨범 ID 결함 및 서버 미리보기/다운로드 미완료로 열어 둠.
 - #3/#7에 실제 role-5 PR/full SHA/검사 결과를 추가로 전달했다. 상대 작업 완료를 의미하지 않는다.
 - [2번 PR 리뷰](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2#pullrequestreview-5258615747): COMMENTED, 승인 아님.
   head `5213e685dd6d66f01cc0e707f657f4d0d3fc3e8e`의 API 클라이언트 diff만 검토.
@@ -114,7 +135,7 @@
   최신 `dc0bb62412feb00a4cc7ad5fe0be12fd66adbf57`에서 네 수정의 실제 diff를 확인하고 전체 프론트 테스트 20개/build를 검사했다.
   **이전 네 지적 사항은 요청자 확인 완료(APPLIED)**. 전체 PR·실제 API E2E 승인은 아니다.
   [재검토 결과](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2#pullrequestreview-5258698258)를 COMMENT로 전달했다.
-  이슈 #3/#4/#7의 댓글은 재조회 시에도 비어 있었다.
+  위 리뷰 이후 #3/#7에 응답이 도착해 최신 인계에 반영했다. #4 응답은 아직 없다.
 
 ## 다음 재개 순서
 
