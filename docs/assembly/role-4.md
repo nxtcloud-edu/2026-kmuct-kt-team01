@@ -48,13 +48,14 @@
 | Bedrock 여행 요약 (8-a) | **부분** — 가짜 클라이언트 검증 완료, 실제 Bedrock 호출 **미검증** |
 | 자연어 검색 구조화 (8-b) | 완료 — 규칙 파서 검증 완료, bedrock 경로는 가짜 클라이언트만 |
 | 미등록 인물 그룹 (8-c) | 완료 — 주입 비교 함수로 검증, 실제 Rekognition 묶기는 **미검증** |
+| worker 중단·재시도·수동수정 보존 공동 검사 (ROLE_04 9번) | 완료·검증 |
 | 실제 Rekognition 호출 | **미실행** |
 
 ## 실행한 검사
 
 ```
 .venv/Scripts/python -m pytest tests -q
-140 passed, 1 warning in 5.70s     # 2026-09-20, Python 3.13.5, Windows
+157 passed, 1 warning in 15.30s    # 2026-09-20, Python 3.13.5, Windows
 ```
 
 저장소 전체 테스트다. 3번의 `test_api.py` / `test_worker.py` / `test_models.py` /
@@ -68,6 +69,18 @@
 - `tests/test_insights.py` — 대표 사진 선정, 집계 사실, mock/off, Bedrock 요청·응답·오류,
   자연어 검색 규칙 파서와 지어낸 태그/이름 제거
 - `tests/test_facegroups.py` — 그룹 생성·예산·결정성·실패 처리, 병합/분리/이동 규칙, 크롭
+- `tests/test_worker_analysis_integration.py` — **worker 와 실제 분석 모듈을 함께** 검사.
+  3번 테스트는 `analyze` 를 가짜로 바꾸지만 여기서는 진짜 모듈을 태운다.
+  정상 완료, 재시도 정책(throttling 3회 / AWS_AUTH 1회), 원문 마스킹,
+  재분석 시 수동 지정·제외 보존, no_face 와 failed 분리, captured_at NULL 유지,
+  worker 중단 동작, 기준 셀카 실패 경로(422 NO_FACE / MULTIPLE_FACES)
+
+## 발견 사항 (3번에게 보고, 내가 고치지 않음)
+
+`worker.claim_one` 은 `analysis_status == 'pending'` 인 사진만 집는다. 그래서
+claim 직후 worker 가 죽으면 그 사진은 **`processing` 에 영구히 갇힌다.** 어떤 worker 도
+다시 집지 않고 분석 현황 화면에 계속 "처리 중"으로 남으며, 사람이 재분석을 눌러야 풀린다.
+`worker.py` 는 3번 소유라 고치지 않고 현재 동작을 테스트로 고정한 뒤 이슈로 올렸다.
 
 DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건드리지 않았다.
 샘플 이미지는 Pillow 로 그 자리에서 만든 합성 이미지이고 저장소에 실사진이 없다.
