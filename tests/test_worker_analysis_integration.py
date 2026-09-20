@@ -391,3 +391,58 @@ def test_interrupted_photo_is_left_processing_and_not_picked_up_again(tmp_path) 
     assert process_one(app.state.session_factory, app.state.storage) is True
     with app.state.session_factory() as db:
         assert db.get(Photo, photo_id).analysis_status == "done"
+
+
+# --------------------------------------------------------------------------
+# 기준 인물(셀카) 등록 — API 를 통과한 실제 경로
+# --------------------------------------------------------------------------
+def reference_manifest(monkeypatch, tmp_path, image: bytes, entry: dict) -> None:
+    """validate_reference 는 업로드 원본 바이트를 그대로 본다(S3 저장 전)."""
+    digest = hashlib.sha256(image).hexdigest()
+    manifest = tmp_path / f"ref-{digest[:8]}.json"
+    manifest.write_text(json.dumps({"samples": {digest: entry}}), encoding="utf-8")
+    monkeypatch.setenv("MOCK_MANIFEST_PATH", str(manifest))
+
+
+def test_selfie_without_a_face_is_rejected_with_no_face(tmp_path, monkeypatch) -> None:
+    client, _app = make_client(tmp_path)
+    create_album(client)
+    selfie = photo_bytes("#204060")
+    reference_manifest(monkeypatch, tmp_path, selfie, {"reference_face_count": 0})
+
+    response = client.post(
+        "/api/members/me/reference", files={"file": ("selfie.jpg", selfie, "image/jpeg")}
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "NO_FACE"
+
+
+def test_selfie_with_many_faces_is_rejected_with_a_different_code(tmp_path, monkeypatch) -> None:
+    """NO_FACE 와 MULTIPLE_FACES 는 반드시 서로 다른 코드여야 한다."""
+    client, _app = make_client(tmp_path)
+    create_album(client)
+    selfie = photo_bytes("#604020")
+    reference_manifest(monkeypatch, tmp_path, selfie, {"reference_face_count": 3})
+
+    response = client.post(
+        "/api/members/me/reference", files={"file": ("selfie.jpg", selfie, "image/jpeg")}
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "MULTIPLE_FACES"
+
+
+def test_rejected_selfie_is_not_stored(tmp_path, monkeypatch) -> None:
+    """검증에 실패한 셀카는 S3 에 올라가면 안 된다(저장 전에 검증한다)."""
+    from backend.app.models import Member
+
+    client, app = make_client(tmp_path)
+    create_album(client)
+    selfie = photo_bytes("#406020")
+    reference_manifest(monkeypatch, tmp_path, selfie, {"reference_face_count": 0})
+
+    client.post("/api/members/me/reference", files={"file": ("selfie.jpg", selfie, "image/jpeg")})
+
+    with app.state.session_factory() as db:
+        member = db.scalar(select(Member))
+        assert member.reference_key is None
+        assert member.reference_indexed is False
