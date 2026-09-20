@@ -242,6 +242,18 @@ def process_one(session_factory, storage) -> bool:
             result = run_analysis_with_retries(
                 photo, image_bytes, analysis_members(members, storage)
             )
+            # Analysis can take long enough for a member to correct the people list.
+            # Re-lock and refresh the row so stale ORM links cannot overwrite that
+            # manual decision or collide with its composite primary key.
+            photo = db.scalar(
+                select(Photo)
+                .where(Photo.id == photo_id)
+                .with_for_update()
+                .options(selectinload(Photo.member_links))
+                .execution_options(populate_existing=True)
+            )
+            if photo is None:
+                return True
             apply_result(db, photo, result)
             db.flush()
             recompute_bursts(db, photo.album_id, photo.shot_type)

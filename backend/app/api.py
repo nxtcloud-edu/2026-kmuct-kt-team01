@@ -530,9 +530,13 @@ def final_edit(db: Session, photo: Photo) -> Edit | None:
             )
         ).all()
     ) & active_ids
-    targets = confirmed_ids or (
-        {photo.uploader_member_id} if photo.uploader_member_id in active_ids else set()
-    )
+    targets = confirmed_ids
+    if photo.shot_type == "no_face" or not targets:
+        targets = (
+            {photo.uploader_member_id}
+            if photo.uploader_member_id in active_ids
+            else set()
+        )
     if not targets:
         return None
     edits = list(
