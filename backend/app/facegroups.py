@@ -32,6 +32,8 @@ __all__ = [
     "move_face",
     "crop_face",
     "make_rekognition_comparer",
+    "faces_from_analysis",
+    "group_album_faces",
 ]
 
 _GROUP_NAMESPACE = uuid.UUID("0a5b9b7e-3d21-5c44-8f10-2b6c7d8e9f01")
@@ -372,3 +374,60 @@ def faces_from_analysis(photo_id: str, photo_key: str, result: Mapping[str, Any]
 def overlaps_known_face(box_a: Mapping[str, Any], box_b: Mapping[str, Any]) -> bool:
     """같은 사진 안에서 이미 아는 얼굴과 같은 자리인지 본다(중복 등록 방지)."""
     return iou(box_a, box_b) >= 0.4
+
+
+# --------------------------------------------------------------------------
+# 앨범 단위 진입점 — 3번이 붙일 때 쓰는 함수
+# --------------------------------------------------------------------------
+def group_album_faces(
+    photos: Sequence[Mapping[str, Any]],
+    load_image: Callable[[str], bytes],
+    *,
+    settings: Any | None = None,
+    client: Any | None = None,
+    threshold: float = DEFAULT_GROUP_THRESHOLD,
+    max_comparisons: int = DEFAULT_MAX_COMPARISONS,
+) -> dict[str, Any]:
+    """앨범 1개의 미등록 얼굴을 묶는다. 3번은 이 함수 하나만 부르면 된다.
+
+    photos: 분석이 끝난 사진들. 각 항목에 필요한 것은 세 개뿐이다.
+        {"id": <photo id>, "s3_key": <원본 키>, "faces": <analyze() 의 faces 그대로>}
+        DB 에서 꺼낼 때 faces 를 보관하지 않았다면 재분석 없이는 쓸 수 없다.
+        (photos 테이블에 faces 원본을 저장하지 않는다면, worker 가 analyze 결과를
+         그대로 넘겨 주는 경로가 필요하다. 그 판단은 3번 몫이다.)
+
+    load_image: Storage.get 을 그대로 넘기면 된다.
+
+    반환은 group_faces 와 같고 `photo_count`, `face_count` 가 더 붙는다.
+    DB 에 쓰지 않는다. 저장은 3번이 한다.
+
+    FACE_PROVIDER=mock 이면 CONFIG_INVALID 로 거절한다. 가짜 인물 그룹을 만들어
+    화면에 보여주지 않기 위해서다.
+    """
+    faces: list[dict[str, Any]] = []
+    for photo in photos or []:
+        photo_id = str(photo.get("id") or "")
+        photo_key = str(photo.get("s3_key") or "")
+        if not photo_id or not photo_key:
+            continue
+        faces.extend(faces_from_analysis(photo_id, photo_key, photo))
+
+    if not faces:
+        return {
+            "groups": [],
+            "ungrouped": [],
+            "comparisons": 0,
+            "truncated": False,
+            "failures": [],
+            "threshold": threshold,
+            "photo_count": len(photos or []),
+            "face_count": 0,
+        }
+
+    compare = make_rekognition_comparer(load_image, settings=settings, client=client)
+    result = group_faces(
+        faces, compare, threshold=threshold, max_comparisons=max_comparisons
+    )
+    result["photo_count"] = len(photos or [])
+    result["face_count"] = len(faces)
+    return result
