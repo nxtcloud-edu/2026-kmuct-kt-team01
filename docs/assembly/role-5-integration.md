@@ -182,7 +182,8 @@ CSS는 약 0.213/0.715/0.072, Pillow Color는 약 0.299/0.587/0.114의 명도 �
 
 아래는 최초 요청 원안이다. 현재 backend-adapters/approval 정책은 #3, editor-base/preview 계약은 #7로 게시했다.
 프론트 리뷰는 PR #2의 full SHA 기준 COMMENT로 게시했다. 원본 손실 문제는 별도 #4.
-별도의 미게시 원안을 중복 이슈로 만들지 않는다. role-5 자체 head는 아직 미커밋 로컬 작업이다.
+별도의 미게시 원안을 중복 이슈로 만들지 않는다. role-5 기능은 `69b5415eac1d966cc4dc15b552943f345e74b9ea`로 push됐고
+[Draft PR #13](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/13)에서 확인할 수 있다.
 
 1. `ZZIK:<RUN>:role-5:backend-adapters`, to=role-3, kind=change.
    필요한 파일: 3번 소유 repository/storage/auth wiring 및 requirements.

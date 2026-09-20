@@ -51,7 +51,7 @@ fixture는 `backend/tests/role5/`에만 둔다. API fixture 응답에는 mode=fi
    - CSS saturate와 Pillow Color의 계수 차이를 수치 확인. 같다고 꾸미지 않고 2번에게 제안 전달.
    - frontend 기반 존재 시 frontend/src/editor/ 안에만 컴포넌트 구현. 없으면 계약·통합 예제를 인계.
    - docs/assembly/role-5.md에 완료/부분/미착수/미검증, 실제 검사 결과, 의존성과 요청 초안을 기록.
-5. [ ] 전체 pytest·컴파일·의존성 검사·변경 diff 검토 후 사용자에게 커밋/push 승인 요청.
+5. [x] 전체 pytest·컴파일·의존성 검사·변경 diff 검토 후 사용자 승인 획득, 기능 commit/push 및 Draft PR #13 생성.
 
 ## 집중 검토
 
@@ -72,5 +72,6 @@ fixture는 `backend/tests/role5/`에만 둔다. API fixture 응답에는 mode=fi
 - 엄격 검사에서 fixture SQLite close 누수를 발견해 수정. 최종에는 경고 없음.
 - 이후 프론트 기반 출현으로 frontend/src/editor/만 추가. React 프로젝트를 새로 만들지 않고 2번 lockfile snapshot에서 검사.
 - EditorPanel 10개 테스트, TypeScript/Vite 빌드, 실제 Chrome 390px 저장→승인→취소 fixture 검사 완료.
+- 사용자 승인 후 69b5415 커밋/push. 2번 수정 답변을 실제 dc0bb62 diff와 최신 기본 npm test 20개/build로 확인.
 - 결정: CSS/Pillow 차이는 단일 계수로 해결되지 않아 서버 권위 미리보기 계약을 3번 확인 대상으로 남김.
 - 결정: 프로세스 강제 종료로 생길 수 있는 S3 고아 객체는 덮어쓰지 않고 보존/실패 처리. 운영 정리 어댑터는 3번 의존성.
