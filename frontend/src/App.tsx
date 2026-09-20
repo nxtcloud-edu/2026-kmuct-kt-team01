@@ -3,7 +3,7 @@ import { createApiClient, getDataMode } from './lib/api'
 import { Landing, ReferenceRegistration } from './pages/EntryFlow'
 import { Gallery } from './pages/Gallery'
 import { CoverageDashboard, PhotoDetail } from './pages/PhotoDetail'
-import { ChartIcon, GridIcon } from './components/icons'
+import { ChartIcon, GridIcon, LogoMarkIcon } from './components/icons'
 import type { ActiveAlbum } from './lib/types'
 import './styles/entry.css'
 import './styles/gallery.css'
@@ -29,7 +29,7 @@ export function loadActiveAlbum(): ActiveAlbum | null {
 }
 
 function Logo({ onClick }: { onClick: () => void }) {
-  return <button className="logo" onClick={onClick} aria-label="찍 홈"><span>찍</span><b>ZZIK</b></button>
+  return <button className="logo" onClick={onClick} aria-label="찍 홈"><span className="logo-mark" aria-hidden="true"><LogoMarkIcon /><span className="logo-glyph">찍</span></span><b>ZZIK</b></button>
 }
 
 function AppHeader({ screen, activeAlbum, onNavigate }: { screen: Screen; activeAlbum: ActiveAlbum | null; onNavigate: (screen: Screen) => void }) {

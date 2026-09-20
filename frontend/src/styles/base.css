@@ -27,8 +27,11 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(65, 105, 225
 .app { min-height: 100vh; }
 .page-shell { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
 .app-header { height: 76px; padding: 0 max(24px, calc((100vw - 1180px) / 2)); display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,.9); border-bottom: 1px solid rgba(229,233,242,.8); position: sticky; top: 0; z-index: 30; backdrop-filter: blur(14px); }
-.logo { display: flex; align-items: baseline; gap: 7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
-.logo span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 13px 13px 13px 4px; background: var(--coral); color: white; font-weight: 800; font-size: 22px; box-shadow: 0 6px 18px rgba(255,115,95,.26); }
+.logo { min-height: 44px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.logo-mark { width: 42px; height: 42px; position: relative; display: block; flex: none; color: var(--coral); filter: drop-shadow(0 6px 8px rgba(255,115,95,.25)); transition: transform .2s ease, filter .2s ease; }
+.logo-mark > svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.logo-glyph { position: absolute; left: 45%; top: 61%; transform: translate(-50%, -50%); color: white; font-size: 12px; font-weight: 800; line-height: 1; text-shadow: 0 1px 1px rgba(106,57,52,.18); }
+.logo:hover .logo-mark { transform: translateY(-1px); filter: drop-shadow(0 8px 10px rgba(255,115,95,.3)); }
 .logo b { font: 700 20px/1 'DM Sans', sans-serif; letter-spacing: .08em; }
 .sample-badge { padding: 5px 10px; border-radius: 999px; background: #fff6d7; color: #8c6a00; font-size: 11px; font-weight: 700; }
 .desktop-nav { align-self: stretch; display: flex; gap: 22px; }.desktop-nav button { display: flex; align-items: center; gap: 7px; padding: 0 8px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; }.desktop-nav button.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 700; }
@@ -49,7 +52,8 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(65, 105, 225
   :root { --blue: #ff735f; --blue-dark: #ec5b48; --blue-pale: #fff0ed; }
   .page-shell { width: min(100% - 32px, 620px); }
   .app-header { height: 64px; padding: 0 16px; }
-  .logo span { width: 34px; height: 34px; font-size: 19px; }
+  .logo-mark { width: 38px; height: 38px; }
+  .logo-glyph { font-size: 11px; }
   .logo b { font-size: 17px; }
   .desktop-nav { display: none; }.profile-chip > span:last-child { display: none; }.profile-chip { padding-right: 5px; }
 }
