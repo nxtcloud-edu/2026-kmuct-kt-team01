@@ -17,18 +17,33 @@ mock의 인물 매칭은 실제 얼굴 인식 결과가 아니다. 정확도로 
 
 ## 샘플 등록 방법
 
+`backend/app/samples.py` 가 해시 계산·검증·기록을 대신한다. JSON을 손으로 고치지 않는다.
+
 ```bash
-python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" photo.jpg
+python -m backend.app.samples add photo.jpg --faces 2 --tags 바다 \
+    --source "2026-09-20 팀 직접 촬영" --license "피사체 4인 구두 동의"
+
+python -m backend.app.samples list
+python -m backend.app.samples remove <sha256>
 ```
 
-나온 해시를 키로 `mock_manifest.json`의 `samples`에 넣는다. `source`와 `license`는 반드시 적는다.
+- `--source`(출처)와 `--license`(사용 허락)는 **비워 둘 수 없다.** 저작권·초상권이
+  확인되지 않은 이미지를 등록하지 못하게 하려는 것이다.
+- `--faces` 는 **사람이 직접 센 얼굴 수**다. 도구가 얼굴을 세지 않는다.
+- `--tags` 는 위 9종만 받는다. "해운대" 같은 고유명사는 거부된다.
+- 이미지 파일을 저장소에 복사하지 않는다. 해시만 기록한다.
+
+선택 인자: `--label`(읽을 이름), `--member-slots`(얼굴 순서대로 members 인덱스, 매칭 없음은 생략),
+`--reference-faces`(`validate_reference` 용 얼굴 수), `--force`(이미 등록된 이미지 덮어쓰기).
 
 ## 현재 등록된 이미지의 출처
 
-**없음.** 2026-09-20 기준 `samples` 는 비어 있다.
-저장소에 사람 얼굴 사진을 커밋하지 않았다. 테스트는 Pillow로 그 자리에서 만드는 합성 이미지
-(단색·도형)만 쓰므로 초상권·라이선스 문제가 없다. 실사진을 등록할 때 이 표를 채운다.
+**없음.** 2026-09-20 기준 `samples` 는 비어 있다. 즉 지금은 **모든 사진이
+`mock_source="synthetic"`** 으로 처리되고, 얼굴마다 `synthetic: true` 가 붙는다.
 
-| 파일 | sha256 | 출처 | 사용 허락 |
-|---|---|---|---|
-| (없음) | | | |
+저장소에 사람 얼굴 사진을 커밋하지 않았다. 테스트는 Pillow로 그 자리에서 만드는 합성 이미지
+(단색)만 쓰므로 초상권·라이선스 문제가 없다.
+
+출처 기록은 이 파일의 표가 아니라 **manifest 항목 자체**(`source`, `license` 필드)에 남는다.
+`python -m backend.app.samples list` 로 언제든 확인할 수 있다. 등록 도구가 두 값을 필수로
+받으므로, manifest 에 있는 모든 항목에는 출처와 사용 허락이 반드시 붙어 있다.

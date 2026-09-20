@@ -238,16 +238,20 @@ parse_search_query("바다에서 찍은 단체샷", member_names=["지민", "현
 ## 10. 미등록 인물 그룹 (`app.facegroups`, T3)
 
 ```python
-from backend.app.facegroups import faces_from_analysis, group_faces, make_rekognition_comparer
+from backend.app.facegroups import group_album_faces
 
-faces = faces_from_analysis(photo.id, photo.s3_key, analysis_result)   # status=="unregistered" 만
-compare = make_rekognition_comparer(storage.get)
-result = group_faces(all_faces, compare)
+# 3번은 이 함수 하나만 부르면 된다. photos 각 항목에 id / s3_key / faces 만 있으면 된다.
+result = group_album_faces(photos, storage.get)
 # -> {"groups": [{group_id, face_ids, representative, labeled_member_id}],
 #     "ungrouped": [...], "comparisons": 12, "truncated": False, "failures": [], "threshold": 92.0}
 ```
 
 - `face_id` 는 `"<photo_id>:<face_index>"` 다. DB 에 쓰지 않으니 3번이 저장한다.
+- 미등록 얼굴이 하나도 없으면 **AWS 를 한 번도 부르지 않고** 빈 결과를 돌려준다.
+- `photos[].faces` 는 `analyze()` 가 돌려준 `faces` 배열 그대로다. `photos` 테이블에
+  이 배열을 보관하지 않는다면 worker 가 분석 직후 넘겨 주는 경로가 필요하다(3번 판단).
+- 더 낮은 수준이 필요하면 `faces_from_analysis` / `group_faces` /
+  `make_rekognition_comparer` 를 따로 쓸 수 있다.
 - 같은 사진 안의 두 얼굴은 같은 사람일 수 없으므로 비교하지 않는다.
 - 임계 92.0 (등록 인물 매칭 90보다 보수적). 판단 불가면 묶지 않는다.
 - `truncated=True` 면 비교 예산을 다 써서 남은 얼굴은 묶지 못한 것이다. 숨기지 않는다.
@@ -258,7 +262,25 @@ result = group_faces(all_faces, compare)
 - `FACE_PROVIDER=rekognition` 에서만 실제 비교가 된다. mock 에서는 comparer 를 만들 수 없다
   (`CONFIG_INVALID`). 가짜 그룹을 만들어 보여주지 않기 위해서다.
 
-## 11. 의존성 (해결됨)
+## 11. mock 샘플 등록 도구 (`app.samples`)
+
+`FACE_PROVIDER=mock` 에서 등록되지 않은 사진은 `mock_source="synthetic"` 이고 얼굴마다
+`synthetic: true` 가 붙는다. 데모용으로 **정해진 결과**가 필요하면 샘플을 등록한다.
+
+```bash
+python -m backend.app.samples add photo.jpg --faces 2 --tags 바다     --source "2026-09-20 팀 직접 촬영" --license "피사체 4인 구두 동의"
+python -m backend.app.samples list
+python -m backend.app.samples remove <sha256>
+```
+
+- `--source` 와 `--license` 는 **필수**다. 저작권·초상권이 확인되지 않은 이미지를
+  등록하지 못하게 하려는 것이다. 검증에 실패하면 manifest 파일을 만들지도 않는다.
+- `--faces` 는 사람이 직접 센 값이다. 도구가 얼굴을 세지 않는다.
+- 태그는 지원 9종만 받는다. 고유명사("해운대")는 거부된다.
+- 이미지 파일을 저장소에 복사하지 않는다. sha256 만 기록한다.
+- 2026-09-20 기준 등록된 샘플은 **0건**이다.
+
+## 12. 의존성 (해결됨)
 
 `requirements.txt` 는 3번 소유이고, 필요한 것이 이미 다 들어 있다:
 `boto3`, `pillow`, `anthropic[bedrock]==1.7.0` (커밋 `fd67890`).

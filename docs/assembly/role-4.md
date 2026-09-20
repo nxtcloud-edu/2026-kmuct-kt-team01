@@ -2,6 +2,7 @@
 
 담당: jooya38 / 갱신: 2026-09-20 (세션 1)
 브랜치: `work/20260920/role-4` (base `main`) / RUN `20260920`
+갱신: 2026-09-20 세션 2 (main 병합 후 후속 작업)
 
 ## 현재 단계
 
@@ -49,6 +50,8 @@
 | 자연어 검색 구조화 (8-b) | 완료 — 규칙 파서 검증 완료, bedrock 경로는 가짜 클라이언트만 |
 | 미등록 인물 그룹 (8-c) | 완료 — 주입 비교 함수로 검증, 실제 Rekognition 묶기는 **미검증** |
 | worker 중단·재시도·수동수정 보존 공동 검사 (ROLE_04 9번) | 완료·검증 |
+| mock 샘플 등록 도구 (ROLE_04 6번) | 완료·검증 — `python -m backend.app.samples`. 등록된 샘플은 아직 0건 |
+| 얼굴 그룹 앨범 단위 진입점 (8-c 인계) | 완료·검증 — `group_album_faces(photos, storage.get)` |
 | 실제 Rekognition 호출 | **미실행** |
 
 ## 실행한 검사
@@ -125,3 +128,30 @@ DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건�
 ## 미처리 요청
 
 받은 요청 없음. 보낸 요청은 위 4건이며 `gh` 로그인이 되면 이슈로 등록해야 한다.
+
+## 세션 2 기록 (main 병합 이후)
+
+PR #15 는 role-2 가 최종 통합(#14) 후 superseded 로 닫았다. 내 작업은 전부 main 에 들어갔다.
+그 뒤 main 을 브랜치에 병합하고(`f82c5fe`) 남은 ROLE_04 항목을 이어서 했다.
+
+| 커밋 | 내용 |
+|---|---|
+| `68c3a85` | **버그 수정** — mock manifest 의 `member_slots` 가 `null` 이면 TypeError 로 죽었다 |
+| `42bcf4f` | mock 샘플 등록 도구 `python -m backend.app.samples` (ROLE_04 6번) |
+| `1b01c6c` | 샘플 README 를 도구 기준으로 갱신 |
+| `a25f9b6` | 앨범 단위 얼굴 그룹 진입점 `group_album_faces` (ROLE_04 8-c 인계) |
+| `32f140d` | 계약 문서 반영 |
+
+검사: `.venv pytest tests -q` → **189 passed**, `pytest` (저장소 전체) → 244 passed
+
+### 아직 아무 데도 연결되지 않은 내 모듈
+
+구현과 검사는 끝났지만 API·worker 어디에서도 호출하지 않는다. 연결은 3번 몫이다.
+
+| 모듈 | 기능 | 상태 |
+|---|---|---|
+| `insights.summarize_album` | 여행 3줄 요약 + 대표 사진 5장 | 미연결 |
+| `insights.parse_search_query` | 자연어 검색 → SQL 필터 | 미연결 |
+| `facegroups.group_album_faces` | 미등록 인물 그룹 | 미연결 |
+
+T3 항목이라 자르더라도 조용히 지우지 않고 여기 남긴다.

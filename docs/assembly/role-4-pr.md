@@ -82,4 +82,8 @@ analyze(image_bytes, album_id, members, *, load_reference=None) -> {
 
 전체 계약과 입출력 예시는 `docs/contracts/role-4-analysis.md`에 있습니다. 상세 상태는 `docs/assembly/role-4.md`에 기록했습니다.
 
-실제 Rekognition·Bedrock 호출 검증 전까지 Draft를 유지합니다.
+## 리뷰 상태
+
+역할 4 범위의 구현은 끝났고 검사는 녹색입니다. 남은 것은 **제가 끝내지 못한 작업이 아니라 외부 조건**입니다 — EC2 인스턴스 역할의 Rekognition·Bedrock 호출 권한(#10, role-1 확인 중). 권한 결과가 나오면 실사진 1장으로 실호출을 검증하고 #10에 기록하겠습니다.
+
+그 검증 전까지는 배포 환경변수를 `FACE_PROVIDER=mock`으로 두는 편이 안전합니다. 자동 폴백이 없어서, 권한이 없는데 `rekognition`으로 두면 업로드한 사진이 전부 `failed` + `AWS_AUTH`가 됩니다.
