@@ -91,6 +91,28 @@ class PreflightTests(unittest.TestCase):
         self.assertNotIn("kmu-proj-06-zzik", serialized)
         self.assertNotIn("private-password", serialized)
 
+    def test_sqlalchemy_psycopg_url_is_normalized_for_driver(self):
+        captured = {}
+
+        def connect(database_url, **kwargs):
+            captured["database_url"] = database_url
+            captured["connect_timeout"] = kwargs["connect_timeout"]
+            return FakeConnection()
+
+        result = preflight._check_database(
+            "postgresql+psycopg://private-user:private-password@db.internal/zzik",
+            connect,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            captured,
+            {
+                "database_url": "postgresql://private-user:private-password@db.internal/zzik",
+                "connect_timeout": 5,
+            },
+        )
+
     def test_failures_are_sanitized(self):
         def fail_database(*_args, **_kwargs):
             raise RuntimeError("postgresql://private-user:private-password@db.internal/zzik")

@@ -6,12 +6,14 @@
 |---|---|---|
 | 저장소 | `nxtcloud-edu/2026-kmuct-kt-team01` | 원격 확인 완료 |
 | 제출 기준 브랜치 | `main` | 원격 기본 브랜치 확인 완료 |
-| 실행 ID | `20260920` | 기존 팀 브랜치 `work/20260920/role-3`과 일치 |
-| AWS 리전 | `us-east-1` | 고정 |
-| 역할 1 IAM | `kmu-proj-06` | 사전 안내 기준 후보. EC2 콘솔 드롭다운 확인 전 미검증 |
-| EC2 주소 | 미할당 | 생성 후 공유 |
+| 실행 ID | `20260920` | 팀 역할 브랜치와 일치 |
+| AWS 리전 | `us-east-1` | 리소스 확인 완료 |
+| 역할 1 IAM | `kmuct-ht-01` | `SafeInstanceProfile-kmuct-ht-01` 연결 확인 |
+| EC2 | `i-04853d5e7a6793b35` / `34.231.109.51` | 실행 중, Session Manager 사용 |
+| S3 | `kmuct-ht-01-zzik-photos` | 식별자 확인, 권한 preflight 대기 |
+| RDS | `zzik-db.cj24wem202yj.us-east-1.rds.amazonaws.com:5432/zzik` | available, DB 연결 preflight 대기 |
 
-IAM 사용자명은 비밀값이 아니지만 현재 값은 AWS 리소스 생성 전에 역할 1 담당자가 콘솔에서 다시 확인해야 한다. Access Key, 세션 시크릿, DB 비밀번호 등 비밀값은 저장소·이슈·PR에 기록하지 않는다.
+리소스 식별자는 비밀값이 아니지만 Access Key, 세션 시크릿, DB 비밀번호 등 비밀값은 저장소·이슈·PR에 기록하지 않는다. EC2는 키 페어 없이 생성되어 SSH 대신 AWS Session Manager를 사용한다.
 
 ## 역할과 계정
 
@@ -29,7 +31,7 @@ IAM 사용자명은 비밀값이 아니지만 현재 값은 AWS 리소스 생성
 |---|---|
 | 역할 1 | `infra/`, `scripts/`, `nginx.conf`, `systemd/` |
 | 역할 2 | `frontend/package.json`, `frontend/src/App.tsx`, 라우팅, 공통 스타일 |
-| 역할 3 | `backend/app/models.py`, `backend/alembic/`, `backend/requirements.txt` |
+| 역할 3 | `backend/app/models.py`, Alembic, Python requirements |
 | 역할 4 | `backend/app/analysis.py`, `backend/app/quality.py` |
 | 역할 5 | `backend/app/edits.py` |
 
@@ -37,8 +39,8 @@ IAM 사용자명은 비밀값이 아니지만 현재 값은 AWS 리소스 생성
 
 ## 현재 단계
 
-- 공식 README 커밋이 이미 있으므로 `bootstrap/20260920` PR로 팀 설정을 추가한다.
-- 역할 브랜치는 `work/20260920/role-N`, 통합 후보는 `assemble/20260920`이다.
-- 원격에서 역할 3 브랜치가 확인됐다. 다른 역할의 실제 진행 상태는 확인하지 않았다.
-- AWS 자원, IAM 인스턴스 프로파일, EC2 주소, 실제 Rekognition 호출은 아직 미검증이다.
-- IAM 인스턴스 프로파일이 보이지 않으면 팀은 `FACE_PROVIDER=mock`으로 진행하고 QnA에 문의한다.
+- 역할 1 Draft PR: `#12`, 브랜치 `work/20260920/role-1`
+- 역할 3 백엔드는 `main`에 병합됐다.
+- EC2·RDS·S3와 인스턴스 프로파일 식별자는 확보했다.
+- 실제 DB/S3/Rekognition/STS preflight와 서비스 기동은 Session Manager에서 실행 대기 중이다.
+- 포트 8000은 직접 API 확인을 위한 임시 진단 포트다. 가능하면 테스트 클라이언트 `/32`로 제한하고 통합 후 닫는다. 정상 사용자 트래픽은 Nginx의 80 포트를 사용한다.

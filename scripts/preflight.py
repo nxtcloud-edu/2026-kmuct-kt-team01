@@ -17,6 +17,14 @@ def _result(name: str, ok: bool, code: str, message: str) -> dict[str, Any]:
     return {"name": name, "ok": ok, "code": code, "message": message}
 
 
+def _normalize_psycopg_url(database_url: str) -> str:
+    """Convert the SQLAlchemy psycopg scheme to a libpq-compatible scheme."""
+    sqlalchemy_prefix = "postgresql+psycopg://"
+    if database_url.startswith(sqlalchemy_prefix):
+        return "postgresql://" + database_url[len(sqlalchemy_prefix) :]
+    return database_url
+
+
 def _check_database(
     database_url: str | None,
     connect: Callable[..., Any] | None = None,
@@ -29,7 +37,7 @@ def _check_database(
             import psycopg
 
             connect = psycopg.connect
-        with connect(database_url, connect_timeout=5) as connection:
+        with connect(_normalize_psycopg_url(database_url), connect_timeout=5) as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 row = cursor.fetchone()

@@ -1,83 +1,188 @@
 # 역할 1 인계 기록
 
-## 현재 단계
+## 한 줄 상태
 
-역할 1의 저장소 bootstrap, 단일 EC2용 Nginx/systemd 설정, 호스트 설치, 배포·롤백, AWS 사전점검, 백업·테스트 복구 코드 작성을 완료했다. 사용자 요청에 따라 AWS 자원은 생성·연결하지 않았으며 실제 사이트 배포도 아직 수행하지 않았다.
+역할 1 인프라 코드는 구현되어 Draft PR #12에 올라가 있고 EC2·RDS·S3도 생성됐지만, **EC2가 Systems Manager에 연결되지 않고 SSH 키도 없어 내부 설정과 실제 preflight를 실행할 접속 경로가 없는 상태**다.
+
+## Git과 PR
 
 - 저장소: `nxtcloud-edu/2026-kmuct-kt-team01`
 - 기준 브랜치: `main`
 - 실행 ID: `20260920`
 - 역할 브랜치: `work/20260920/role-1`
-- 기록 시점 head: `e5acbeb82c5ad9a932ee5b5275996a9022e584ca`
-- bootstrap head: `0af8c5df6a61667cf19144a4ea18a8e04d7d4604`
+- 인계 직전 head: `2727d7116b86e9f4489422b3de498cfb247d0ff6`
+- Draft PR: <https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/12>
+- PR reviewer: `y3rtcn`
+- 작업 트리와 원격 branch는 인계 직전에 동기화 확인
 
-## 구현 상태
+## 생성된 AWS 리소스
 
-| 역할 1 산출물 | 상태 | 근거 |
+| 항목 | 값 | 확인 상태 |
+|---|---|---|
+| 리전/AZ | `us-east-1` / `us-east-1f` | 사용자 확인 |
+| EC2 | `i-04853d5e7a6793b35` | 실행 중 |
+| Public IPv4 | `34.231.109.51` | 사용자 확인 |
+| Public DNS | `ec2-34-231-109-51.compute-1.amazonaws.com` | 사용자 확인 |
+| AMI | `ami-0190258a3c1abc699` | 사용자 확인 |
+| 인스턴스 프로파일 | `SafeInstanceProfile-kmuct-ht-01` | 사용자 화면 기준 연결, 정책 내용 미확인 |
+| S3 | `kmuct-ht-01-zzik-photos` | 생성됨, 실제 `head_bucket` 미검증 |
+| RDS endpoint | `zzik-db.cj24wem202yj.us-east-1.rds.amazonaws.com:5432` | `available` |
+| RDS DB/user | `zzik` / `zzik` | 비밀번호는 저장소·채팅에 없음 |
+| EC2 보안그룹 | `zzik-web-sg` | 80과 8000 인바운드 개방 |
+
+Access Key는 만들거나 사용하지 않는다. boto3는 EC2 인스턴스 역할 표준 자격증명 체인을 사용해야 한다.
+
+## 현재 차단 원인
+
+1. EC2는 키 페어 없이 생성되어 SSH 접속이 불가능하다.
+2. Session Manager 화면에서 `i-04853d5e7a6793b35 is not connected`가 표시된다.
+3. 현재 AWS 콘솔 사용자에게 다음 조회 권한 거부도 표시됐다.
+   - `ssm:DescribeInstanceInformation`
+   - `ssm:GetConnectionStatus`
+   - `ssm:GetServiceSetting`
+   - `iam:GetInstanceProfile`
+4. 외부에서 80/8000 TCP 연결을 시도했으나 응답하지 않았다. 보안그룹과 별개로 EC2 내부 서비스는 아직 listening하지 않는 것으로 판단한다.
+
+정확한 SSM 미연결 원인은 EC2 내부 또는 IAM 정책을 볼 수 없어 확정하지 못했다. 관리자가 다음을 확인해야 한다.
+
+- `SafeInstanceProfile-kmuct-ht-01`에 `AmazonSSMManagedInstanceCore` 상당 권한 존재
+- AMI에 SSM Agent 설치 및 실행
+- EC2에서 SSM endpoint로 HTTPS 443 outbound 가능
+- 확인 후 EC2 재부팅 및 Session Manager 재접속
+
+SSM 복구가 불가능하면 키 페어를 지정한 새 EC2가 필요하다. 기존 RDS와 S3는 재사용할 수 있다. 22 포트는 관리 소스 `/32`로만 제한한다.
+
+## 역할 1 구현 상태
+
+| 산출물 | 상태 | 파일 |
 |---|---|---|
 | 팀 bootstrap·소유권·Git 규칙 | 완료 | `README.md`, `.gitignore`, `docs/TEAM_SETUP.md`, `docs/GIT_WORKFLOW.md` |
-| DB/S3/Rekognition/STS preflight | 구현 완료, 실 AWS 미검증 | `scripts/preflight.py`, `scripts/test_preflight.py` |
-| 같은 origin Nginx | 구현 완료, EC2 `nginx -t` 미실행 | `nginx.conf` |
-| API·worker systemd | 구현 완료, EC2 기동 미검증 | `systemd/zzik-api.service`, `systemd/zzik-worker.service` |
-| AL2023 호스트 bootstrap | 구현 완료, EC2 미실행 | `scripts/install-host.sh` |
-| 커밋별 배포·application rollback | 구현 완료, 통합 배포 미실행 | `scripts/deploy.sh`, `scripts/rollback.sh` |
-| DB/S3 백업·테스트 DB 복구 | 구현 완료, 실 저장소 미검증 | `scripts/backup-data.sh`, `scripts/restore-db-test.sh` |
-| AWS 연결·보안·정리 절차 | 문서 완료, 자원 미생성 | `infra/README.md`, `infra/runtime.env.example` |
+| DB/S3/Rekognition/STS preflight | 구현 완료, EC2 미실행 | `scripts/preflight.py`, `scripts/test_preflight.py` |
+| 실제 AWS runtime 생성 | 구현 완료, EC2 미실행 | `scripts/configure-runtime.sh`, `infra/runtime.env.example` |
+| 같은 origin Nginx | 구현 완료, EC2 미실행 | `nginx.conf` |
+| API·worker systemd | 구현 완료, EC2 미실행 | `systemd/zzik-api.service`, `systemd/zzik-worker.service` |
+| AL2023 host bootstrap | 구현 완료, EC2 미실행 | `scripts/install-host.sh` |
+| 커밋별 배포·application rollback | 구현 완료, 통합 미실행 | `scripts/deploy.sh`, `scripts/rollback.sh` |
+| DB/S3 backup·test restore | 구현 완료, AWS 미실행 | `scripts/backup-data.sh`, `scripts/restore-db-test.sh` |
+| AWS 운영 runbook | 실제 식별자 반영 완료 | `infra/README.md` |
 
-## 기능별 커밋
+## 최근 추가 커밋
 
-- `951ad45` — sanitized AWS preflight
-- `3f86f2e` — same-origin Nginx
-- `6dbced5` — API/worker systemd
-- `b631957` — deploy/rollback
-- `4f9c4a4` — AL2023 host bootstrap
-- `bf8da01` — backup/test restore
-- `897ccb9` — deferred AWS runbook
-- `3ef0d17` — role 3 package layout와 deploy/systemd 정렬
-- `e5acbeb` — 최신 `main`(역할 3 병합) 반영 및 `.gitignore` 양쪽 규칙 보존
+- `bd594cd` — SQLAlchemy `postgresql+psycopg://` URL을 preflight에서 psycopg용 `postgresql://`로 정규화
+- `2727d71` — 실제 EC2/RDS/S3 식별자와 안전한 runtime 생성 및 Session Manager 절차 반영
 
-## PR 상태
+이전 기능별 커밋은 PR #12의 commit 목록에서 확인한다.
 
-로컬 환경에 `gh` CLI가 없어 Draft PR과 GitHub 리뷰를 생성하지 못했다. 브랜치는 원격에 push했다.
+## 접속 복구 후 실행 순서
 
-- bootstrap 비교: <https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/compare/main...bootstrap/20260920?expand=1>
-- 역할 1 비교: <https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/compare/main...work/20260920/role-1?expand=1>
+### 1. EC2 도구 확인
+
+Session Manager 터미널에서 실행한다. 비밀값은 출력하지 않는다.
+
+```bash
+grep -E '^(NAME|VERSION_ID)=' /etc/os-release
+git --version 2>&1 || echo 'git=MISSING'
+python3.13 --version 2>&1 || echo 'python3.13=MISSING'
+node --version 2>&1 || echo 'node=MISSING'
+npm --version 2>&1 || echo 'npm=MISSING'
+nginx -v 2>&1 || echo 'nginx=MISSING'
+aws --version 2>&1 || echo 'aws=MISSING'
+sudo ss -lntp | grep -E ':(80|8000)\b' || echo '80/8000=NOT_LISTENING'
+```
+
+Python 3.13과 Node 24를 사용해야 하며 시스템 `python3` 링크를 바꾸지 않는다.
+
+### 2. 역할 1 브랜치 받기
+
+```bash
+sudo mkdir -p /opt/zzik
+sudo chown "$USER":"$USER" /opt/zzik
+git clone https://github.com/nxtcloud-edu/2026-kmuct-kt-team01.git /opt/zzik/source
+git -C /opt/zzik/source switch work/20260920/role-1
+```
+
+이미 clone이 있으면 중복 clone 대신 다음을 사용한다.
+
+```bash
+git -C /opt/zzik/source fetch origin
+git -C /opt/zzik/source pull --ff-only
+```
+
+### 3. runtime.env 생성
+
+```bash
+cd /opt/zzik/source
+sudo ./scripts/configure-runtime.sh
+sudo stat -c '%U:%G %a %n' /etc/zzik/runtime.env
+```
+
+스크립트가 RDS 비밀번호를 숨김 입력으로 받고 자동 URL-encoding한다. 비밀번호를 명령 인자, 채팅, Git에 넣지 않는다. 기대 권한은 `root:root 600`이다.
+
+### 4. preflight
+
+```bash
+sudo python3.13 -m venv /opt/zzik/venv
+sudo /opt/zzik/venv/bin/python -m pip install -r /opt/zzik/source/requirements.txt
+sudo bash -c 'set -a; source /etc/zzik/runtime.env; set +a; cd /opt/zzik/source; /opt/zzik/venv/bin/python scripts/preflight.py'
+```
+
+다음 네 check가 모두 `ok: true`여야 한다.
+
+- database: `SELECT 1`
+- s3: `head_bucket`
+- rekognition: `list_collections`
+- sts: `get_caller_identity`
+
+실패 시 출력은 고정 코드만 사용하므로 SDK 원문 오류를 팀 채널에 복사하지 않는다.
+
+### 5. 사이트 배포
+
+역할 1 브랜치에는 아직 프론트가 없으므로 현재 `deploy.sh` 전체 실행은 `frontend/package-lock.json` 검사에서 의도적으로 중단된다. 역할 3 통합 후보에 역할 2 프론트가 포함된 뒤 실행한다.
+
+```bash
+cd /opt/zzik/source
+sudo ./scripts/install-host.sh
+sudo DEPLOY_BRANCH=main ./scripts/deploy.sh
+```
+
+검증 주소:
+
+- `http://34.231.109.51/`
+- `http://34.231.109.51/api/health/ready`
+- 임시 진단: `http://34.231.109.51:8000/api/health/ready`
+
+8000은 사용자가 직접 API 확인을 위해 임시 개방했다. 가능하면 테스트 클라이언트 `/32`로 제한하고, 정상 Nginx 경로가 확인되면 닫는다.
 
 ## 실행한 검사
 
-- 모든 shell script에 Git for Windows Bash `bash -n`: 통과
-- `restore-db-test.sh`에 운영형 DB명 `zzik` 전달: `_test`/`_e2e` 보호 규칙으로 거부 확인
-- 각 커밋 전 `git diff --cached --check`: 통과
-- 비밀값 검사: AWS Access Key 패턴, `AWS_SECRET_ACCESS_KEY`, `aws configure` 지시 없음
-- 원격 branch head: 각 기능 커밋 후 push하여 확인
+- 모든 shell script `bash -n`: 통과
+- `restore-db-test.sh` 운영 DB명 차단: 통과
+- 각 커밋 `git diff --cached --check`: 통과
+- Access Key/실제 DB 비밀번호/실제 session secret 커밋 없음
+- 역할 1 branch 로컬/원격 SHA 동기화 확인
+- 외부 80/8000 연결: 응답 없음
 
 ## 실행하지 못한 검사
 
-- 로컬에 Python과 `py` launcher가 없어 `scripts/test_preflight.py` 미실행
-- 로컬에 Node 24, Nginx, systemd가 없어 프론트 빌드·`nginx -t`·`systemd-analyze verify` 미실행
-- 사용자 요청에 따라 STS/S3/Rekognition/RDS 호출, EC2 배포, 실제 주소 E2E 미실행
-- 운영·데모 데이터 대상 파괴 검사는 수행하지 않음
+- 로컬 Python 부재로 `scripts/test_preflight.py` 미실행
+- EC2 접속 불가로 OS·Python·Node·Nginx·AWS CLI 버전 미확인
+- `/etc/zzik/runtime.env` 미생성
+- RDS/S3/Rekognition/STS preflight 미실행
+- Nginx/API/worker 기동 및 실제 URL smoke test 미실행
+- 업로드→S3→worker→Rekognition E2E 미실행
+- backup→`_test` DB restore 미실행
 
-## 역할 3 검토 기록
+## 역할 3 검토 메모
 
-역할 3 head `aac5017902061c667266a37223457eb1b2bb4bb2`를 확인했으나 이미 PR #1로 `main`에 병합된 뒤여서 GitHub 승인·수정요청을 남기지 못했다. 역할 1 경로 충돌은 `3ef0d17`에서 해결했다. 다음 사항은 역할 3 소유 파일의 후속 검토가 필요하다.
+역할 3 head는 역할 1 검토 전에 PR #1로 `main`에 병합됐다. 역할 1의 package/import 경로 충돌은 `3ef0d17`에서 해결했다. 역할 3 담당자가 후속 확인할 항목:
 
-- production 설정 누락 시 SQLite/local storage/기본 session secret으로 폴백하지 않고 fail-closed 처리
-- worker가 `processing`에서 종료됐을 때 stale job 재처리
-- status/source 값과 tenant 간 관계의 DB 제약 강화
-- PostgreSQL 전용 migration·cascade·`SKIP LOCKED` 검사
-
-HTTP와 `Secure=false`, `SameSite=Lax`, `HttpOnly=true`는 HTTPS 사용이 금지된 이번 대회 제약에 따른 확정 결정이므로 역할 1에서 바꾸지 않았다.
-
-## 남은 외부 조건
-
-1. 사용자가 실제 IAM 사용자명을 확인하고 EC2 인스턴스 프로파일 드롭다운을 확인
-2. 사용자 또는 주최측이 S3·RDS·EC2·보안그룹 생성
-3. `/etc/zzik/runtime.env`에 실제 비밀값을 저장하고 권한 600 설정
-4. 역할 2 프론트 및 역할 4/5 구현이 통합된 뒤 `scripts/deploy.sh` 실행
-5. EC2에서 preflight, Nginx, API, worker, 업로드→분석 E2E, 백업→`_test` 복구 검사
-6. 전체 기능 상태와 mock/실제 AI 범위는 최종 통합 후 README에 갱신
+- production 설정 누락 시 SQLite/local storage/default secret으로 폴백하지 않고 fail-closed
+- worker가 `processing` 중 종료됐을 때 stale job 재처리
+- status/source와 tenant 관계의 DB 제약
+- PostgreSQL migration·cascade·`SKIP LOCKED` 실제 검사
 
 ## 미처리 요청
 
-- `ZZIK:20260920:role-1:R3-001` — from role 1, to role 3, kind `review`, 상태 `REQUESTED 초안(미게시)`. 위 역할 3 후속 검토 네 항목이 수락 기준이며 `gh` 부재로 GitHub 이슈를 생성하지 못했다.
+- SSM 복구 요청 — 담당: AWS 관리자/QnA, 상태: `REQUESTED 필요`
+- `ZZIK:20260920:role-1:R3-001` — 역할 3 후속 검토, 상태: `REQUESTED 초안(미게시)`
+- PR #12는 Draft 상태를 유지하고 EC2 preflight 결과를 받은 뒤 검증 내역을 갱신한다.
