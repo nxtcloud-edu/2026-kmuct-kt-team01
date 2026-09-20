@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import io
+
+import httpx
+import pytest
+from PIL import Image
+
+from backend.app.quality import AnalysisError
+from backend.app.vision_gateway import (
+    GatewaySettings,
+    enrich_analysis,
+    load_gateway_settings,
+)
+
+
+def _image_bytes() -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", (80, 80), color=(100, 140, 180)).save(output, format="JPEG")
+    return output.getvalue()
+
+
+def test_gateway_is_off_by_default():
+    settings = load_gateway_settings({})
+    result = {"provider": "mock", "mode": "mock"}
+    assert enrich_analysis(result, b"unused", settings=settings) is result
+
+
+def test_gateway_requires_https_key_and_model():
+    with pytest.raises(AnalysisError) as exc:
+        load_gateway_settings({"VISION_PROVIDER": "gateway", "VISION_API_BASE": "http://example.test/v1"})
+    assert exc.value.code == "CONFIG_INVALID"
+
+
+def test_gateway_enriches_tags_quality_and_provenance():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url == "https://gateway.test/v1/chat/completions"
+        assert request.headers["authorization"] == "Bearer secret"
+        payload = __import__("json").loads(request.content)
+        assert payload["model"] == "bedrock-haiku"
+        image_url = payload["messages"][1]["content"][1]["image_url"]["url"]
+        assert image_url.startswith("data:image/jpeg;base64,")
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"tags":["바다","노을","바다"],"quality":{"sharpness":84,"brightness":72,"eyes_open_ratio":0.75}}'
+                        }
+                    }
+                ]
+            },
+        )
+
+    settings = GatewaySettings("gateway", "https://gateway.test/v1", "secret", "bedrock-haiku", 5)
+    base = {
+        "provider": "mock",
+        "mode": "mock",
+        "tags": ["합성"],
+        "quality": {"sharpness": 1, "brightness": 1, "eyes_open_ratio": 0},
+        "calls": {"total": 0},
+        "warnings": [],
+    }
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = enrich_analysis(base, _image_bytes(), settings=settings, client=client)
+
+    assert result["tags"] == ["바다", "노을"]
+    assert result["quality"] == {"sharpness": 84.0, "brightness": 72.0, "eyes_open_ratio": 0.75}
+    assert result["provider"] == "mock+gateway"
+    assert result["mode"] == "hybrid"
+    assert result["calls"] == {"total": 1, "vision_classify": 1}
+    assert result["vision_model_id"] == "bedrock-haiku"
+    assert result["best_score"] > 0
+
+
+def test_gateway_auth_error_is_not_retryable():
+    settings = GatewaySettings("gateway", "https://gateway.test/v1", "bad", "bedrock-haiku", 5)
+    transport = httpx.MockTransport(lambda request: httpx.Response(401, json={"error": "invalid"}))
+    with httpx.Client(transport=transport) as client, pytest.raises(AnalysisError) as exc:
+        enrich_analysis({"provider": "mock"}, _image_bytes(), settings=settings, client=client)
+    assert exc.value.code == "GATEWAY_AUTH"
+    assert exc.value.retryable is False

@@ -240,6 +240,12 @@ VITE_API_TARGET=http://127.0.0.1:8000
 | `AWS_REGION` | 현재 설계 리전 `us-east-1` |
 | `FACE_PROVIDER` | `mock` 또는 `rekognition` |
 | `MOCK_MANIFEST_PATH` | mock 샘플 정의 파일. 기본 `backend/samples/mock_manifest.json` |
+| `VISION_PROVIDER` | `off` 또는 OpenAI 호환 멀티모달 분류를 사용하는 `gateway` |
+| `VISION_API_BASE` | 게이트웨이의 `/v1` 기본 주소. HTTPS만 허용 |
+| `VISION_API_KEY` | 게이트웨이 Bearer 키. 저장소에 커밋하지 않고 서버 환경파일에만 저장 |
+| `VISION_MODEL_ID` | 이미지 입력을 지원하는 모델 별칭. 현재 배포 권장값 `bedrock-haiku` |
+
+`VISION_PROVIDER=gateway`는 장면 태그와 일반 품질 점수만 외부 AI 결과로 바꿉니다. 얼굴 수와 인물 연결은 `FACE_PROVIDER` 결과를 유지하며, `FACE_PROVIDER=mock`과 함께 쓰면 화면에 하이브리드 분석으로 표시됩니다.
 
 ## 테스트
 

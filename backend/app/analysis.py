@@ -393,8 +393,16 @@ def analyze(
     members = list(members or [])
 
     if settings.provider == PROVIDER_MOCK:
-        return _analyze_mock(image_bytes, album_id, members, settings)
-    return _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
+        result = _analyze_mock(image_bytes, album_id, members, settings)
+    else:
+        result = _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
+
+    # Scene and general quality classification can use an independent
+    # OpenAI-compatible multimodal gateway while face identity remains with
+    # FACE_PROVIDER. The default is off, so existing deployments are unchanged.
+    from .vision_gateway import enrich_analysis
+
+    return enrich_analysis(result, image_bytes)
 
 
 def _analyze_rekognition(
