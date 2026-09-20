@@ -364,6 +364,12 @@ def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -
     ).json()["results"]
     both_id, owner_only_id = [item["photo"]["id"] for item in uploaded]
     with app.state.session_factory() as db:
+        both = db.get(Photo, both_id)
+        owner_only = db.get(Photo, owner_only_id)
+        both.tags = ["실내", "노트북"]
+        both.unregistered_face_count = 1
+        owner_only.tags = ["실내"]
+        owner_only.uncertain_face_count = 1
         db.add_all(
             [
                 PhotoMember(photo_id=both_id, member_id=owner_id, source="manual"),
@@ -372,6 +378,9 @@ def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -
             ]
         )
         db.commit()
+
+    album_detail = owner.get(f"/api/albums/{album['album_id']}").json()
+    assert album_detail["tags"] == ["노트북", "실내"]
 
     response = owner.get(
         f"/api/albums/{album['album_id']}/photos",
@@ -387,3 +396,14 @@ def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -
     assert photo["thumb_url"] == f"/api/photos/{both_id}/thumbnail"
     assert {member["display_name"] for member in photo["members"]} == {"민지", "서준"}
     assert owner.get(photo["thumb_url"]).status_code == 200
+
+    unregistered = owner.get(
+        f"/api/albums/{album['album_id']}/photos",
+        params={"face_status": "unregistered"},
+    ).json()
+    assert [item["id"] for item in unregistered["items"]] == [both_id]
+    uncertain = owner.get(
+        f"/api/albums/{album['album_id']}/photos",
+        params={"face_status": "uncertain"},
+    ).json()
+    assert [item["id"] for item in uncertain["items"]] == [owner_only_id]

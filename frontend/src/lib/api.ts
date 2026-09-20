@@ -109,6 +109,7 @@ export class HttpApiClient implements ApiClient {
     const params = new URLSearchParams()
     filters.member_ids?.forEach((id) => params.append('member_id', id))
     if (filters.shot_type) params.set('shot_type', filters.shot_type)
+    if (filters.face_status) params.set('face_status', filters.face_status)
     if (filters.tag) params.set('tag', filters.tag)
     if (filters.only_best) params.set('only_best', 'true')
     if (filters.sort) params.set('sort', {
@@ -230,7 +231,7 @@ export class MockApiClient implements ApiClient {
 
   async getAlbum(): Promise<Album> {
     await delay()
-    return { id: 'album-demo', name: '우리들의 제주', invite_code: 'JEJU26', created_at: '2026-09-18T09:00:00Z', photo_count: this.photos.length, members }
+    return { id: 'album-demo', name: '우리들의 제주', invite_code: 'JEJU26', created_at: '2026-09-18T09:00:00Z', photo_count: this.photos.length, members, tags: [...new Set(this.photos.flatMap((photo) => photo.tags))].sort() }
   }
 
   async uploadReference(file: File): Promise<ReferenceResult> {
@@ -245,6 +246,9 @@ export class MockApiClient implements ApiClient {
     let result = [...this.photos]
     if (filters.member_ids?.length) result = result.filter((photo) => filters.member_ids!.every((id) => photo.members.some((member) => member.member_id === id && !member.excluded)))
     if (filters.shot_type) result = result.filter((photo) => photo.shot_type === filters.shot_type)
+    if (filters.face_status === 'unregistered') result = result.filter((photo) => Boolean(photo.unregistered_face_count))
+    if (filters.face_status === 'uncertain') result = result.filter((photo) => Boolean(photo.uncertain_face_count))
+    if (filters.face_status === 'no_face') result = result.filter((photo) => photo.shot_type === 'no_face')
     if (filters.tag) result = result.filter((photo) => photo.tags.includes(filters.tag!))
     if (filters.only_best) result = result.filter((photo) => photo.is_best)
     if (filters.sort === 'best_desc') result.sort((a, b) => (b.best_score ?? 0) - (a.best_score ?? 0))

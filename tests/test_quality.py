@@ -120,8 +120,14 @@ def test_supported_labels_map_to_korean():
     assert map_labels_to_tags(labels) == ["산", "음식", "카페", "야경", "꽃", "숲", "도시"]
 
 
-def test_unsupported_labels_are_dropped():
-    assert map_labels_to_tags([{"Name": "Dog"}, {"Name": "Haeundae Beach Resort"}]) == []
+def test_common_scene_labels_are_translated_and_unknown_places_are_dropped():
+    assert map_labels_to_tags([
+        {"Name": "Person"},
+        {"Name": "Indoors"},
+        {"Name": "Laptop"},
+        {"Name": "Dog"},
+        {"Name": "Haeundae Beach Resort"},
+    ]) == ["실내", "노트북", "반려동물"]
 
 
 def test_duplicate_tags_collapse():

@@ -65,6 +65,15 @@ describe('HttpApiClient', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('sort=best_score_desc')
   })
 
+  it('미등록 얼굴 상태를 백엔드 필터로 전달한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 1, page_size: 50, total: 0 }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await new HttpApiClient().listPhotos('album-1', { face_status: 'unregistered' })
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('face_status=unregistered')
+  })
+
   it('인물 제외 상태를 서버 payload에 명시한다', async () => {
     const responsePhoto = { id: 'p-1', album_id: 'a-1', filename: 'x.jpg', captured_at: null, created_at: '2026-09-20T00:00:00Z', analysis_status: 'done', analysis_error: null, provider: 'fixture', mode: 'mock', face_count: 1, shot_type: 'solo', tags: [], quality: {}, best_score: null, is_best: false, members: [] }
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responsePhoto), { status: 200 }))

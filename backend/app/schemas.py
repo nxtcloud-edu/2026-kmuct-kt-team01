@@ -40,6 +40,7 @@ class AlbumOut(ORMModel):
     created_at: datetime
     members: list[MemberOut]
     photo_count: int
+    tags: list[str] = Field(default_factory=list)
 
 
 class PhotoMemberOut(BaseModel):
