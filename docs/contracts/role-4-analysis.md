@@ -47,18 +47,28 @@ from app.quality import inspect_image, group_bursts      # 선택
 
 ## 4. `analyze(image_bytes, album_id, members) -> dict`
 
-`members` 는 기준 얼굴이 등록된 멤버만 넘기면 된다. 각 항목:
+`members` 는 **dict 여도 되고 SQLAlchemy `Member` ORM 객체여도 된다.**
+worker 가 ORM 객체를 그대로 넘기므로 지금 코드 그대로 동작한다.
 
-```python
-{"id": "<member uuid>",
- # 아래 중 하나로 기준 셀카 위치를 알려준다
- "reference_bytes": b"...",                                  # 또는
- "reference_bucket": "kmu-proj-06-zzik", "reference_key": "refs/m1.jpg",   # 또는
- "reference_s3": {"bucket": "...", "key": "..."}}
-```
+기준 셀카를 찾는 순서:
 
-기준 얼굴 위치를 알 수 없거나 그 셀카에 얼굴이 없으면 **그 멤버만 건너뛰고**
-`skipped_members` 에 사유를 남긴다. 사진 전체 분석은 계속된다.
+| 순서 | 값 | 비고 |
+|---|---|---|
+| 1 | `reference_bytes` | raw bytes |
+| 2 | `load_reference(reference_key)` | **권장.** `analyze(..., load_reference=storage.get)` |
+| 3 | `reference_bucket` / `reference_s3` / 환경변수 `S3_BUCKET` + `reference_key` | S3 직접 참조 |
+
+> **worker 에 한 줄 추가가 필요하다 (REQUESTED):**
+> ```python
+> result = analyze(image_bytes, photo.album_id, members, load_reference=storage.get)
+> ```
+> 이걸 넘기지 않으면 `STORAGE_BACKEND=local` 에서 기준 셀카를 읽을 길이 없어
+> 모든 멤버가 `NO_REFERENCE_BUCKET` 으로 건너뛰어진다(= 인물 매칭 0건).
+
+기준 얼굴 위치를 알 수 없거나, 로드에 실패하거나, 그 셀카에 얼굴이 없으면
+**그 멤버만 건너뛰고** `skipped_members` 에 사유(`NO_REFERENCE` /
+`NO_REFERENCE_BUCKET` / `REFERENCE_LOAD_FAILED` / `INVALID_PARAMETER`)를 남긴다.
+사진 전체 분석은 계속된다.
 
 ### 실제(rekognition) 응답 예 — 단체샷 2명, 한 명은 눈 감음
 
@@ -207,7 +217,53 @@ model_id, calls, elapsed_ms, usage, facts, warnings}`
 **실제 Bedrock 호출은 아직 한 번도 하지 않았다.** 계정에서 이 모델 ID 에 접근 권한이
 없으면 `SUMMARY_MODEL_UNAVAILABLE` 이 난다. 그때 `BEDROCK_MODEL_ID` 를 바꾼다.
 
-## 9. 3번에게 필요한 것 (REQUESTED)
+## 9. 자연어 검색 구조화 (`app.insights.parse_search_query`, T3)
+
+```python
+parse_search_query("바다에서 찍은 단체샷", member_names=["지민", "현우"])
+# -> {"tags": ["바다"], "shot_type": "group", "member_names": [], "only_best": False,
+#     "understood": True, "query": ..., "provider": "mock", "mode": "mock",
+#     "calls": {"bedrock_invoke": 0}, "elapsed_ms": 1, "model_id": None, "usage": None}
+```
+
+**구조화만 한다. 검색은 3번의 SQL 이 한다.** 임베딩 인프라를 만들지 않았다.
+
+| 필드 | SQL 로 옮기는 법 |
+|---|---|
+| `tags` | AND 조건. `photos.tags` 에 전부 포함 |
+| `shot_type` | `"any"` 면 조건을 걸지 않는다 |
+| `member_names` | `photo_members` 조인. **앨범에 실제로 있는 이름만** 돌려준다 |
+| `only_best` | `photos.is_best` 조건 추가 |
+| `understood` | `False` 면 화면에 "검색어를 이해하지 못했습니다"를 띄운다 |
+
+기본값(`SUMMARY_PROVIDER=mock`)은 모델을 부르지 않는 한국어 키워드 규칙 파서다.
+`bedrock` 이면 enum 을 박은 구조화 출력으로 1회 호출한다. 어느 쪽이든 허용 목록 밖
+태그와 앨범에 없는 사람 이름은 버린다.
+
+## 10. 미등록 인물 그룹 (`app.facegroups`, T3)
+
+```python
+from backend.app.facegroups import faces_from_analysis, group_faces, make_rekognition_comparer
+
+faces = faces_from_analysis(photo.id, photo.s3_key, analysis_result)   # status=="unregistered" 만
+compare = make_rekognition_comparer(storage.get)
+result = group_faces(all_faces, compare)
+# -> {"groups": [{group_id, face_ids, representative, labeled_member_id}],
+#     "ungrouped": [...], "comparisons": 12, "truncated": False, "failures": [], "threshold": 92.0}
+```
+
+- `face_id` 는 `"<photo_id>:<face_index>"` 다. DB 에 쓰지 않으니 3번이 저장한다.
+- 같은 사진 안의 두 얼굴은 같은 사람일 수 없으므로 비교하지 않는다.
+- 임계 92.0 (등록 인물 매칭 90보다 보수적). 판단 불가면 묶지 않는다.
+- `truncated=True` 면 비교 예산을 다 써서 남은 얼굴은 묶지 못한 것이다. 숨기지 않는다.
+- 그룹 이름을 지어내지 않는다. `labeled_member_id` 는 사람이 채운다.
+- 수정 연산은 전부 순수 함수: `merge_groups(groups, keep_id, merge_id)`,
+  `split_group(groups, group_id, face_ids)`, `move_face(groups, face_id, target_group_id)`.
+  오류는 `GROUP_NOT_FOUND` / `GROUP_LABEL_CONFLICT` / `GROUP_SPLIT_ALL` / `GROUP_SPLIT_EMPTY`.
+- `FACE_PROVIDER=rekognition` 에서만 실제 비교가 된다. mock 에서는 comparer 를 만들 수 없다
+  (`CONFIG_INVALID`). 가짜 그룹을 만들어 보여주지 않기 위해서다.
+
+## 11. 3번에게 필요한 것 (REQUESTED)
 
 `backend/requirements.txt` 는 3번 소유다. 이 모듈은 다음이 필요하다:
 
