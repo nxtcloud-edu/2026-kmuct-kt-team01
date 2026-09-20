@@ -7,6 +7,7 @@ import { InviteCodeCopyButton } from '../components/InviteCode'
 
 type GalleryTab = 'all' | 'mine' | 'group' | 'best'
 type FaceStatus = '' | 'unregistered' | 'uncertain' | 'no_face'
+type UploadedBy = '' | 'me' | 'others'
 type GridItem = Photo | Photo[]
 
 function ProgressBanner({ counts, onReanalyze, busy }: { counts: AnalysisCounts; onReanalyze?: (scope: ReanalyzeScope) => void; busy?: boolean }) {
@@ -85,6 +86,7 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage, 
   const [memberId, setMemberId] = useState<string | null>(null)
   const [faceStatus, setFaceStatus] = useState<FaceStatus>('')
   const [tag, setTag] = useState('')
+  const [uploadedBy, setUploadedBy] = useState<UploadedBy>('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
@@ -98,7 +100,7 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage, 
   const [rematching, setRematching] = useState(false)
   const [rematchNotice, setRematchNotice] = useState<string | null>(null)
 
-  const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...(memberId ? [memberId] : [])])] : (memberId ? [memberId] : []), shot_type: tab === 'group' ? 'group' : undefined, face_status: faceStatus || undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberId, faceStatus, tag, currentMemberId])
+  const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...(memberId ? [memberId] : [])])] : (memberId ? [memberId] : []), shot_type: tab === 'group' ? 'group' : undefined, face_status: faceStatus || undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined, uploaded_by: uploadedBy || undefined }), [page, tab, memberId, faceStatus, tag, uploadedBy, currentMemberId])
   const gridItems = useMemo(() => groupForDisplay(photos), [photos])
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true); setError(null)
@@ -142,8 +144,9 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage, 
     <section className="filter-panel" aria-label="사진 분류 필터">
       <div className="filter-row"><span className="filter-label">얼굴별</span><div className="chip-row">{album?.members.map((member, index) => <button key={member.id} className={`person-chip ${memberId === member.id ? 'active' : ''}`} onClick={() => selectMember(member.id)}><span className={`avatar color-${index}`}>{member.display_name.slice(0, 1)}</span>{member.display_name}{memberId === member.id && <CheckIcon />}</button>)}</div><div className="chip-row face-status-chips">{([['', '얼굴 전체'], ['unregistered', '미등록 인물'], ['uncertain', '확인 필요'], ['no_face', '사람 없음']] as const).map(([value, label]) => <button key={value || 'all-faces'} className={`status-chip ${faceStatus === value ? 'active' : ''}`} onClick={() => changeFaceStatus(value)}>{label}</button>)}</div></div>
       <div className="filter-row"><span className="filter-label">태그별</span><div className="chip-row">{['', ...(album?.tags ?? [])].map((item) => <button key={item || 'all-tags'} className={`tag-chip ${tag === item ? 'active' : ''}`} onClick={() => { setTag(item); setPage(1) }}>{item || '모든 태그'}</button>)}{album?.tags?.length === 0 && <span className="filter-empty">분석된 태그가 없어요</span>}</div></div>
+      <div className="filter-row"><span className="filter-label">올린이</span><div className="chip-row">{([['', '모두'], ['others', '다른 사람이 올린 사진'], ['me', '내가 올린 사진']] as const).map(([value, label]) => <button key={value || 'all-uploaders'} className={`status-chip ${uploadedBy === value ? 'active' : ''}`} onClick={() => { setUploadedBy(value); setPage(1); setSelected([]) }}>{label}</button>)}</div></div>
     </section>
-    {error ? <ErrorState error={error} onRetry={() => void load()} /> : loading ? <Spinner label="추억을 불러오는 중" /> : photos.length === 0 ? <EmptyState title="조건에 맞는 사진이 없어요" description="선택한 얼굴 상태나 태그를 바꿔보세요." action={<button className="button secondary" onClick={() => { setMemberId(null); setFaceStatus(''); setTag(''); changeTab('all') }}>필터 초기화</button>} /> : <><div className="gallery-summary"><span>사진 <b>{total}</b>장</span><small>최근 촬영순</small></div><div className="photo-grid">{gridItems.map((item) => Array.isArray(item)
+    {error ? <ErrorState error={error} onRetry={() => void load()} /> : loading ? <Spinner label="추억을 불러오는 중" /> : photos.length === 0 ? <EmptyState title="조건에 맞는 사진이 없어요" description="선택한 얼굴 상태나 태그를 바꿔보세요." action={<button className="button secondary" onClick={() => { setMemberId(null); setFaceStatus(''); setTag(''); setUploadedBy(''); changeTab('all') }}>필터 초기화</button>} /> : <><div className="gallery-summary"><span>사진 <b>{total}</b>장</span><small>최근 촬영순</small></div><div className="photo-grid">{gridItems.map((item) => Array.isArray(item)
       ? <PhotoStack key={item[0]?.id ?? Math.random()} photos={item} selectable={selecting} selected={item.every((photo) => selected.includes(photo.id))} onSelect={() => toggleStackSelected(item.map((photo) => photo.id))} onOpen={() => setStackOpen(item)} />
       : <PhotoCard key={item.id} photo={item} selectable={selecting} selected={selected.includes(item.id)} onSelect={() => toggleSelected(item.id)} onOpen={() => onOpen(item.id)} />
     )}</div><nav className="pagination" aria-label="사진 페이지"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>이전</button>{Array.from({ length: totalPages }, (_, index) => index + 1).map((value) => <button key={value} className={page === value ? 'active' : ''} onClick={() => setPage(value)}>{value}</button>)}<button disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>다음</button></nav></>}

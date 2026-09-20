@@ -126,6 +126,7 @@ export class HttpApiClient implements ApiClient {
     if (filters.face_status) params.set('face_status', filters.face_status)
     if (filters.tag) params.set('tag', filters.tag)
     if (filters.only_best) params.set('only_best', 'true')
+    if (filters.uploaded_by) params.set('uploaded_by', filters.uploaded_by)
     if (filters.sort) params.set('sort', {
       captured_desc: 'captured_at_desc',
       best_desc: 'best_score_desc',
@@ -216,6 +217,8 @@ function makePhotos(): Photo[] {
     return {
       id: `p-${index + 1}`,
       album_id: 'album-demo',
+      // 샘플에서도 올린이 필터가 동작하도록 멤버들에게 돌아가며 배정한다.
+      uploader_member_id: members[index % members.length]?.id ?? 'm-1',
       filename: `jeju-day-${String(index + 1).padStart(2, '0')}.jpg`,
       image_url: url,
       thumb_url: url,
@@ -269,6 +272,8 @@ export class MockApiClient implements ApiClient {
     if (filters.face_status === 'no_face') result = result.filter((photo) => photo.shot_type === 'no_face')
     if (filters.tag) result = result.filter((photo) => photo.tags.includes(filters.tag!))
     if (filters.only_best) result = result.filter((photo) => photo.is_best)
+    if (filters.uploaded_by === 'others') result = result.filter((photo) => photo.uploader_member_id !== 'm-1')
+    if (filters.uploaded_by === 'me') result = result.filter((photo) => photo.uploader_member_id === 'm-1')
     if (filters.sort === 'best_desc') result.sort((a, b) => (b.best_score ?? 0) - (a.best_score ?? 0))
     const page = filters.page ?? 1
     const pageSize = 8

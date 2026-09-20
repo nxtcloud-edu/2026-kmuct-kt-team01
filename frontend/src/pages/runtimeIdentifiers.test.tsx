@@ -81,6 +81,23 @@ describe('runtime album identifiers', () => {
     await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ member_ids: ['member-real'] })))
   })
 
+  it('asks the API for photos other people uploaded', async () => {
+    const client = {
+      getAlbum: vi.fn().mockResolvedValue({ id: 'album-real', name: '부산', invite_code: 'BUSAN1', created_at: '2026-09-20T00:00:00Z', photo_count: 0, members: [], tags: [] }),
+      listPhotos: vi.fn().mockResolvedValue({ items: [], page: 1, page_size: 8, total: 0, total_pages: 1 }),
+      getStatus: vi.fn().mockResolvedValue({ pending: 0, processing: 0, done: 0, failed: 0 }),
+    } as unknown as ApiClient
+
+    render(<Gallery client={client} albumId="album-real" currentMemberId="member-real" onOpen={() => {}} onCoverage={() => {}} />)
+    await waitFor(() => expect(client.listPhotos).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: '다른 사람이 올린 사진' }))
+    await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ uploaded_by: 'others' })))
+
+    fireEvent.click(screen.getByRole('button', { name: '모두' }))
+    await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ uploaded_by: undefined })))
+  })
+
   it('shows analyzed tags and filters unresolved faces', async () => {
     const client = {
       getAlbum: vi.fn().mockResolvedValue({ id: 'album-real', name: '키로톤', invite_code: 'DEMO26', created_at: '2026-09-20T00:00:00Z', photo_count: 0, members: [], tags: ['실내', '노트북'] }),

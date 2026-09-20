@@ -378,6 +378,7 @@ def list_photos(
     face_status: Literal["unregistered", "uncertain", "no_face"] | None = None,
     tag: str | None = None,
     only_best: bool = False,
+    uploaded_by: Literal["me", "others"] | None = None,
     sort: str = "created_at_desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -401,6 +402,12 @@ def list_photos(
         query = query.where(Photo.shot_type == "no_face")
     if only_best:
         query = query.where(Photo.is_best.is_(True))
+    # 누가 올렸는지로 거른다. '내가 올린 사진은 이미 내 폰에 있으니 남이 찍어준 것만 받는다'는
+    # 쓰임새가 실제로 많다. 사진에 누가 찍혔는지(member_id)와는 다른 축이다.
+    if uploaded_by == "others":
+        query = query.where(Photo.uploader_member_id != member.id)
+    elif uploaded_by == "me":
+        query = query.where(Photo.uploader_member_id == member.id)
     order = {
         "created_at_asc": Photo.created_at.asc(),
         "captured_at_desc": Photo.captured_at.desc().nullslast(),
