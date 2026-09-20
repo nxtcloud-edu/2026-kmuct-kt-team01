@@ -1,0 +1,586 @@
+from __future__ import annotations
+
+import hashlib
+import secrets
+import tempfile
+import zipfile
+from collections import Counter
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Annotated, Any
+from uuid import uuid4
+
+from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
+from fastapi.responses import RedirectResponse, StreamingResponse
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.orm import Session, selectinload
+
+from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
+from backend.app.auth import SessionCodec
+from backend.app.errors import ApiError, error_body
+from backend.app.models import (
+    Album,
+    AnalysisStatus,
+    Approval,
+    Edit,
+    Member,
+    MemberSource,
+    Photo,
+    PhotoMember,
+)
+from backend.app.schemas import (
+    AlbumCreate,
+    AlbumCreated,
+    AlbumJoin,
+    AlbumOut,
+    CoverageMember,
+    CoverageOut,
+    DownloadSelection,
+    EditCreate,
+    MemberOut,
+    PhotoMemberOut,
+    PhotoMembersUpdate,
+    PhotoOut,
+    PhotoPage,
+    StatusOut,
+    UploadBatchResponse,
+    UploadResult,
+)
+from backend.app.storage import (
+    Storage,
+    normalize_image,
+    photo_keys,
+    read_upload,
+)
+
+router = APIRouter(prefix="/api")
+
+
+def get_db(request: Request) -> Iterator[Session]:
+    session = request.app.state.session_factory()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+def get_storage(request: Request) -> Storage:
+    return request.app.state.storage
+
+
+def current_member(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    session_value: Annotated[str | None, Cookie(alias="zzik_session")] = None,
+) -> Member:
+    cookie_name = request.app.state.settings.session_cookie_name
+    if cookie_name != "zzik_session":
+        session_value = request.cookies.get(cookie_name)
+    codec: SessionCodec = request.app.state.session_codec
+    member_id = codec.decode(session_value)
+    member = db.get(Member, member_id)
+    if member is None:
+        raise ApiError(401, "INVALID_SESSION", "세션의 멤버를 찾을 수 없습니다.")
+    return member
+
+
+def require_album_member(member: Member, album_id: str) -> None:
+    if member.album_id != album_id:
+        raise ApiError(403, "ALBUM_FORBIDDEN", "이 앨범에 접근할 권한이 없습니다.")
+
+
+def require_photo(db: Session, member: Member, photo_id: str) -> Photo:
+    photo = db.scalar(
+        select(Photo)
+        .where(Photo.id == photo_id)
+        .options(selectinload(Photo.member_links))
+    )
+    if photo is None:
+        raise ApiError(404, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다.")
+    require_album_member(member, photo.album_id)
+    return photo
+
+
+def photo_out(photo: Photo) -> PhotoOut:
+    output = PhotoOut.model_validate(photo)
+    output.members = [
+        PhotoMemberOut(
+            member_id=link.member_id,
+            similarity=link.similarity,
+            source=link.source,
+            excluded=link.excluded,
+        )
+        for link in photo.member_links
+    ]
+    return output
+
+
+def set_session_cookie(request: Request, response: Response, member_id: str) -> None:
+    settings = request.app.state.settings
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=request.app.state.session_codec.encode(member_id),
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        path="/",
+    )
+
+
+@router.post("/albums", response_model=AlbumCreated, status_code=201)
+def create_album(
+    payload: AlbumCreate,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> AlbumCreated:
+    album = Album(name=payload.name.strip(), invite_code=secrets.token_urlsafe(8))
+    member = Member(album=album, display_name=payload.display_name.strip())
+    db.add_all([album, member])
+    db.commit()
+    set_session_cookie(request, response, member.id)
+    return AlbumCreated(album_id=album.id, invite_code=album.invite_code)
+
+
+@router.post("/albums/join", response_model=AlbumCreated)
+def join_album(
+    payload: AlbumJoin,
+    request: Request,
+    response: Response,
+    db: Annotated[Session, Depends(get_db)],
+) -> AlbumCreated:
+    album = db.scalar(select(Album).where(Album.invite_code == payload.invite_code))
+    if album is None:
+        raise ApiError(404, "INVITE_NOT_FOUND", "초대 코드를 찾을 수 없습니다.")
+    member = Member(album_id=album.id, display_name=payload.display_name.strip())
+    db.add(member)
+    db.commit()
+    set_session_cookie(request, response, member.id)
+    return AlbumCreated(album_id=album.id, invite_code=album.invite_code)
+
+
+@router.get("/albums/{album_id}", response_model=AlbumOut)
+def get_album(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AlbumOut:
+    require_album_member(member, album_id)
+    album = db.get(Album, album_id)
+    if album is None:
+        raise ApiError(404, "ALBUM_NOT_FOUND", "앨범을 찾을 수 없습니다.")
+    members = db.scalars(
+        select(Member).where(Member.album_id == album_id).order_by(Member.joined_at)
+    ).all()
+    photo_count = db.scalar(
+        select(func.count(Photo.id)).where(Photo.album_id == album_id)
+    ) or 0
+    return AlbumOut(
+        id=album.id,
+        name=album.name,
+        invite_code=album.invite_code,
+        created_at=album.created_at,
+        members=[MemberOut.model_validate(item) for item in members],
+        photo_count=photo_count,
+    )
+
+
+@router.post("/members/me/reference")
+def upload_reference(
+    file: Annotated[UploadFile, File(...)],
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> dict[str, Any]:
+    raw = read_upload(file.file)
+    try:
+        result = validate_reference(raw)
+    except AnalysisUnavailable as exc:
+        raise ApiError(
+            503,
+            "ANALYSIS_UNAVAILABLE",
+            "사진 분석 모듈이 아직 연결되지 않았습니다.",
+            {"owner": "role-4", "mode": "unavailable"},
+        ) from exc
+    except Exception as exc:
+        code = getattr(exc, "code", "REFERENCE_VALIDATION_FAILED")
+        message = getattr(exc, "message_ko", str(exc))
+        raise ApiError(422, code, message) from exc
+
+    normalized, _, _, _, _ = normalize_image(raw, file.content_type)
+    key = f"albums/{member.album_id}/members/{member.id}/reference.jpg"
+    storage.put(key, normalized, "image/jpeg")
+    member.reference_key = key
+    member.reference_indexed = True
+    db.commit()
+    return {
+        "member_id": member.id,
+        "reference_indexed": True,
+        "provider": result.get("provider"),
+        "mode": result.get("mode"),
+        "face_count": result.get("face_count"),
+    }
+
+
+@router.post("/albums/{album_id}/photos", response_model=UploadBatchResponse)
+def upload_photos(
+    album_id: str,
+    files: Annotated[list[UploadFile], File(...)],
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> UploadBatchResponse:
+    require_album_member(member, album_id)
+    results: list[UploadResult] = []
+    for upload in files:
+        stored_keys: list[str] = []
+        try:
+            raw = read_upload(upload.file)
+            normalized, thumbnail, width, height, captured_at = normalize_image(
+                raw, upload.content_type
+            )
+            photo_id = str(uuid4())
+            original_key, thumb_key = photo_keys(album_id, photo_id)
+            storage.put(original_key, normalized, "image/jpeg")
+            stored_keys.append(original_key)
+            storage.put(thumb_key, thumbnail, "image/jpeg")
+            stored_keys.append(thumb_key)
+            photo = Photo(
+                id=photo_id,
+                album_id=album_id,
+                uploader_member_id=member.id,
+                filename=(upload.filename or "photo.jpg")[:255],
+                s3_key=original_key,
+                thumb_key=thumb_key,
+                content_hash=hashlib.sha256(raw).hexdigest(),
+                mime="image/jpeg",
+                width=width,
+                height=height,
+                byte_size=len(normalized),
+                captured_at=captured_at,
+                analysis_status=AnalysisStatus.PENDING.value,
+            )
+            db.add(photo)
+            db.commit()
+            photo.member_links = []
+            results.append(
+                UploadResult(filename=upload.filename or "photo.jpg", ok=True, photo=photo_out(photo))
+            )
+        except ApiError as exc:
+            db.rollback()
+            for key in stored_keys:
+                storage.delete(key)
+            results.append(
+                UploadResult(
+                    filename=upload.filename or "unknown",
+                    ok=False,
+                    error=error_body(exc.code, exc.message, exc.details),
+                )
+            )
+        except Exception:
+            db.rollback()
+            for key in stored_keys:
+                storage.delete(key)
+            results.append(
+                UploadResult(
+                    filename=upload.filename or "unknown",
+                    ok=False,
+                    error=error_body("UPLOAD_FAILED", "사진 저장에 실패했습니다."),
+                )
+            )
+    return UploadBatchResponse(results=results)
+
+
+@router.get("/albums/{album_id}/photos", response_model=PhotoPage)
+def list_photos(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    member_id: str | None = None,
+    shot_type: str | None = None,
+    tag: str | None = None,
+    only_best: bool = False,
+    sort: str = "created_at_desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> PhotoPage:
+    require_album_member(member, album_id)
+    query = select(Photo).where(Photo.album_id == album_id).options(selectinload(Photo.member_links))
+    if member_id:
+        query = query.where(
+            Photo.member_links.any(
+                (PhotoMember.member_id == member_id) & (PhotoMember.excluded.is_(False))
+            )
+        )
+    if shot_type:
+        query = query.where(Photo.shot_type == shot_type)
+    if only_best:
+        query = query.where(Photo.is_best.is_(True))
+    order = {
+        "created_at_asc": Photo.created_at.asc(),
+        "captured_at_desc": Photo.captured_at.desc().nullslast(),
+        "best_score_desc": Photo.best_score.desc().nullslast(),
+    }.get(sort, Photo.created_at.desc())
+    photos = list(db.scalars(query.order_by(order)).all())
+    if tag:
+        photos = [photo for photo in photos if tag in photo.tags]
+    total = len(photos)
+    start = (page - 1) * page_size
+    return PhotoPage(
+        items=[photo_out(photo) for photo in photos[start : start + page_size]],
+        page=page,
+        page_size=page_size,
+        total=total,
+    )
+
+
+@router.get("/photos/{photo_id}", response_model=PhotoOut)
+def get_photo(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PhotoOut:
+    return photo_out(require_photo(db, member, photo_id))
+
+
+@router.put("/photos/{photo_id}/members", response_model=PhotoOut)
+def update_photo_members(
+    photo_id: str,
+    payload: PhotoMembersUpdate,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PhotoOut:
+    photo = require_photo(db, member, photo_id)
+    member_ids = {item.member_id for item in payload.members}
+    valid_ids = set(
+        db.scalars(
+            select(Member.id).where(
+                Member.album_id == photo.album_id, Member.id.in_(member_ids)
+            )
+        ).all()
+    )
+    if valid_ids != member_ids:
+        raise ApiError(422, "INVALID_MEMBER", "다른 앨범의 멤버가 포함되어 있습니다.")
+
+    existing = {link.member_id: link for link in photo.member_links}
+    for change in payload.members:
+        link = existing.get(change.member_id)
+        if link is None:
+            db.add(
+                PhotoMember(
+                    photo_id=photo.id,
+                    member_id=change.member_id,
+                    source=MemberSource.MANUAL.value,
+                    excluded=change.excluded,
+                )
+            )
+        else:
+            link.source = MemberSource.MANUAL.value
+            link.excluded = change.excluded
+            link.similarity = None
+    edit_ids = select(Edit.id).where(Edit.photo_id == photo.id)
+    db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
+    db.commit()
+    db.refresh(photo)
+    photo = require_photo(db, member, photo_id)
+    return photo_out(photo)
+
+
+@router.post("/photos/{photo_id}/reanalyze", response_model=PhotoOut)
+def reanalyze_photo(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PhotoOut:
+    photo = require_photo(db, member, photo_id)
+    photo.analysis_status = AnalysisStatus.PENDING.value
+    photo.analysis_error = None
+    db.commit()
+    return photo_out(photo)
+
+
+@router.get("/albums/{album_id}/status", response_model=StatusOut)
+def album_status(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> StatusOut:
+    require_album_member(member, album_id)
+    rows = db.execute(
+        select(Photo.analysis_status, func.count(Photo.id))
+        .where(Photo.album_id == album_id)
+        .group_by(Photo.analysis_status)
+    ).all()
+    counts = Counter({status: count for status, count in rows})
+    return StatusOut(**{status.value: counts[status.value] for status in AnalysisStatus})
+
+
+@router.get("/albums/{album_id}/coverage", response_model=CoverageOut)
+def album_coverage(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> CoverageOut:
+    require_album_member(member, album_id)
+    album_members = db.scalars(select(Member).where(Member.album_id == album_id)).all()
+    counts = dict(
+        db.execute(
+            select(PhotoMember.member_id, func.count(PhotoMember.photo_id))
+            .join(Photo, Photo.id == PhotoMember.photo_id)
+            .where(Photo.album_id == album_id, PhotoMember.excluded.is_(False))
+            .group_by(PhotoMember.member_id)
+        ).all()
+    )
+    total = db.scalar(select(func.count(Photo.id)).where(Photo.album_id == album_id)) or 0
+    return CoverageOut(
+        members=[
+            CoverageMember(
+                member_id=item.id,
+                display_name=item.display_name,
+                photo_count=counts.get(item.id, 0),
+            )
+            for item in album_members
+        ],
+        total=total,
+    )
+
+
+@router.get("/photos/{photo_id}/download")
+def download_photo(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> Response:
+    photo = require_photo(db, member, photo_id)
+    url = storage.signed_url(photo.s3_key, expires=300)
+    if url:
+        return RedirectResponse(url=url, status_code=307)
+    return Response(
+        content=storage.get(photo.s3_key),
+        media_type=photo.mime,
+        headers={"Content-Disposition": f'attachment; filename="{photo.filename}"'},
+    )
+
+
+@router.delete("/photos/{photo_id}", status_code=204)
+def delete_photo(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> Response:
+    photo = require_photo(db, member, photo_id)
+    if photo.uploader_member_id != member.id:
+        raise ApiError(403, "PHOTO_DELETE_FORBIDDEN", "업로더만 사진을 삭제할 수 있습니다.")
+    keys = [photo.s3_key, photo.thumb_key]
+    db.delete(photo)
+    db.commit()
+    for key in keys:
+        storage.delete(key)
+    return Response(status_code=204)
+
+
+def role_owned_not_ready(owner: str, feature: str) -> None:
+    raise ApiError(
+        501,
+        "FEATURE_NOT_CONNECTED",
+        f"{feature} 기능이 아직 통합되지 않았습니다.",
+        {"owner": owner, "mode": "unavailable"},
+    )
+
+
+@router.post("/albums/{album_id}/download")
+def download_album_selection(
+    album_id: str,
+    payload: DownloadSelection,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    storage: Annotated[Storage, Depends(get_storage)],
+) -> StreamingResponse:
+    require_album_member(member, album_id)
+    if payload.version == "final":
+        role_owned_not_ready("role-5", "최종 보정본 ZIP")
+    unique_ids = list(dict.fromkeys(payload.photo_ids))
+    photos = list(
+        db.scalars(
+            select(Photo).where(Photo.album_id == album_id, Photo.id.in_(unique_ids))
+        ).all()
+    )
+    if len(photos) != len(unique_ids):
+        raise ApiError(404, "PHOTO_NOT_FOUND", "선택한 사진 일부를 찾을 수 없습니다.")
+    archive = tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
+    used_names: set[str] = set()
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
+        for index, photo in enumerate(photos, start=1):
+            safe_name = Path(photo.filename).name.replace("\\", "_") or f"photo-{index}.jpg"
+            if safe_name in used_names:
+                safe_name = f"{index}-{safe_name}"
+            used_names.add(safe_name)
+            output.writestr(safe_name, storage.get(photo.s3_key))
+    archive.seek(0)
+
+    def chunks():
+        try:
+            while data := archive.read(64 * 1024):
+                yield data
+        finally:
+            archive.close()
+
+    return StreamingResponse(
+        chunks(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="zzik-photos.zip"'},
+    )
+
+
+@router.post("/photos/{photo_id}/edits")
+def create_edit(
+    photo_id: str,
+    _: EditCreate,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    require_photo(db, member, photo_id)
+    role_owned_not_ready("role-5", "사진 보정")
+
+
+@router.get("/photos/{photo_id}/edits")
+def list_edits(
+    photo_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    require_photo(db, member, photo_id)
+    role_owned_not_ready("role-5", "보정 버전")
+
+
+@router.post("/edits/{edit_id}/approve")
+def approve_edit(
+    edit_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    edit = db.get(Edit, edit_id)
+    if edit is None:
+        raise ApiError(404, "EDIT_NOT_FOUND", "보정본을 찾을 수 없습니다.")
+    photo = db.get(Photo, edit.photo_id)
+    if photo is None:
+        raise ApiError(404, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다.")
+    require_album_member(member, photo.album_id)
+    role_owned_not_ready("role-5", "보정 승인")
+
+
+@router.delete("/edits/{edit_id}/approve")
+def revoke_approval(
+    edit_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> None:
+    approve_edit(edit_id, member, db)
+
+
+@router.get("/health/ready")
+def readiness(db: Annotated[Session, Depends(get_db)]) -> dict[str, str]:
+    db.execute(text("SELECT 1"))
+    return {"status": "ready"}
