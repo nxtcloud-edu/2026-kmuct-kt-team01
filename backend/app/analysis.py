@@ -715,7 +715,13 @@ def _analyze_mock(
         tags = list(entry.get("tags") or [])
         quality = dict(entry.get("quality") or _mock_quality(rng, face_count))
         slots = list(entry.get("member_slots") or [])
-        assigned = [member_ids[i] if 0 <= i < len(member_ids) else None for i in slots]
+        # manifest 스키마상 슬롯은 null 일 수 있다("이 얼굴은 등록 멤버가 아님").
+        assigned = [
+            member_ids[i]
+            if isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(member_ids)
+            else None
+            for i in slots
+        ]
         assigned += [None] * max(0, face_count - len(assigned))
         synthetic = False
     else:

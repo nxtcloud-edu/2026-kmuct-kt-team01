@@ -571,6 +571,41 @@ def test_mock_manifest_entry_is_used(tmp_path, jpeg_bytes):
     assert result["best_score"] == 86.0
 
 
+def test_mock_manifest_member_slot_can_be_null(tmp_path, jpeg_bytes):
+    """manifest 의 member_slots 는 null 을 담을 수 있다 ("이 얼굴은 등록 멤버가 아님")."""
+    from backend.app.quality import inspect_image
+
+    digest = inspect_image(jpeg_bytes).content_hash
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {"samples": {digest: {"face_count": 3, "tags": [], "member_slots": [0, None, 1]}}}
+        ),
+        encoding="utf-8",
+    )
+    settings = load_settings({"FACE_PROVIDER": "mock", "MOCK_MANIFEST_PATH": str(manifest)})
+    result = analyze(jpeg_bytes, "a", [{"id": "m1"}, {"id": "m2"}], settings=settings)
+
+    assert [face["member_id"] for face in result["faces"]] == ["m1", None, "m2"]
+    assert result["faces"][1]["status"] == "unregistered"
+    assert result["matched_member_ids"] == ["m1", "m2"]
+
+
+def test_mock_manifest_out_of_range_slot_is_not_assigned(tmp_path, jpeg_bytes):
+    from backend.app.quality import inspect_image
+
+    digest = inspect_image(jpeg_bytes).content_hash
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({"samples": {digest: {"face_count": 2, "member_slots": [0, 9]}}}),
+        encoding="utf-8",
+    )
+    settings = load_settings({"FACE_PROVIDER": "mock", "MOCK_MANIFEST_PATH": str(manifest)})
+    result = analyze(jpeg_bytes, "a", [{"id": "m1"}], settings=settings)
+
+    assert [face["member_id"] for face in result["faces"]] == ["m1", None]
+
+
 def test_mock_manifest_can_express_no_face_and_multiple_faces(tmp_path):
     from backend.app.quality import inspect_image
 
