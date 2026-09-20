@@ -98,6 +98,13 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(Photo.id))) == 1
 
+    listing = client.get(f"/api/albums/{album['album_id']}/photos")
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 1
+    assert listing.json()["items"][0]["analysis_status"] == "pending"
+    assert listing.json()["items"][0]["provider"] is None
+    assert listing.json()["items"][0]["mode"] is None
+
 
 def test_upload_accepts_jpeg_with_nonstandard_declared_type(tmp_path) -> None:
     client, app = make_client(tmp_path)
@@ -117,12 +124,11 @@ def test_upload_accepts_jpeg_with_nonstandard_declared_type(tmp_path) -> None:
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(Photo.id))) == 2
 
+    # 선언된 Content-Type 이 image/jpg 든 octet-stream 이든 두 장 모두 목록에 보여야 한다.
     listing = client.get(f"/api/albums/{album['album_id']}/photos")
     assert listing.status_code == 200
-    assert listing.json()["total"] == 1
-    assert listing.json()["items"][0]["analysis_status"] == "pending"
-    assert listing.json()["items"][0]["provider"] is None
-    assert listing.json()["items"][0]["mode"] is None
+    assert listing.json()["total"] == 2
+    assert [item["analysis_status"] for item in listing.json()["items"]] == ["pending", "pending"]
 
 
 def test_upload_converts_iphone_heic_to_jpeg(tmp_path) -> None:
