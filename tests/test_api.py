@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import hashlib
 import zipfile
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -158,6 +159,26 @@ def test_reference_endpoint_accepts_iphone_heic(tmp_path) -> None:
     with app.state.session_factory() as db:
         member = db.get(Member, response.json()["member_id"])
         assert app.state.storage.get(member.reference_key).startswith(b"\xff\xd8\xff")
+
+
+def test_download_with_non_ascii_filename_does_not_500(tmp_path) -> None:
+    """Content-Disposition 헤더는 latin-1만 허용한다. 한글 파일명을 그대로 넣으면
+    UnicodeEncodeError로 500이 나서 사진 상세·보정 화면의 이미지가 전부 깨졌었다."""
+    client, _app = make_client(tmp_path)
+    album = create_album(client)
+    upload = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("이상혁_연속컷_1.jpeg", jpeg_bytes(), "image/jpeg"))],
+    )
+    assert upload.status_code == 200
+    photo = upload.json()["results"][0]["photo"]
+    assert photo is not None
+
+    download = client.get(f"/api/photos/{photo['id']}/download")
+    assert download.status_code == 200
+    disposition = download.headers["content-disposition"]
+    assert "filename*=UTF-8''" in disposition
+    assert quote("이상혁_연속컷_1.jpeg") in disposition
 
 
 def test_upload_preserves_png_original_bytes_and_metadata_across_restart(tmp_path) -> None:

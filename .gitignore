@@ -38,6 +38,7 @@ build/
 backups/
 uploads/
 storage/
+storage_*/
 
 # IDE / OS
 .vscode/

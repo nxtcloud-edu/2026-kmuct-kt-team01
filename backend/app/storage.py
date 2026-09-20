@@ -195,7 +195,10 @@ def normalize_image(
             source.verify()
         with Image.open(io.BytesIO(data)) as source:
             captured_at = None
-            detected_mime = Image.MIME.get(source.format or "")
+            # iPhone Portrait/버스트 사진은 종종 MPO(Multi Picture Object) 컨테이너로 저장된다.
+            # 대표 이미지 자체는 정상 JPEG이므로(PIL이 그대로 열고 처리할 수 있다) JPEG로 취급한다.
+            detected_format = "JPEG" if source.format == "MPO" else source.format
+            detected_mime = Image.MIME.get(detected_format or "")
             if detected_mime not in ALLOWED_MIME:
                 raise ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "JPEG와 PNG만 업로드할 수 있습니다.")
             captured_value = source.getexif().get(36867) or source.getexif().get(306)

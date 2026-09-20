@@ -9,6 +9,7 @@ from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
@@ -105,6 +106,19 @@ def require_photo(
         raise ApiError(404, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다.")
     require_album_member(member, photo.album_id)
     return photo
+
+
+def content_disposition(filename: str) -> str:
+    """HTTP 헤더는 latin-1만 허용한다. 한글 등 비-ASCII 파일명을 filename= 에 그대로
+    넣으면 UnicodeEncodeError로 500이 난다(다운로드·사진 상세·보정 화면이 전부 깨진다).
+    latin-1로 안전한 파일명은 그대로 두고(기존 동작 유지), 아니면 RFC 6266 filename*
+    로 원본을, filename= 에는 ASCII로 줄인 대체값을 같이 준다."""
+    try:
+        filename.encode("latin-1")
+        return f'attachment; filename="{filename}"'
+    except UnicodeEncodeError:
+        ascii_fallback = filename.encode("ascii", "ignore").decode("ascii").strip() or "download"
+        return f'attachment; filename="{ascii_fallback}"; filename*=UTF-8\'\'{quote(filename, safe="")}'
 
 
 def photo_out(photo: Photo) -> PhotoOut:
@@ -494,7 +508,7 @@ def download_photo(
     return Response(
         content=storage.get(photo.s3_key),
         media_type=photo.mime,
-        headers={"Content-Disposition": f'attachment; filename="{photo.filename}"'},
+        headers={"Content-Disposition": content_disposition(photo.filename)},
     )
 
 
@@ -613,7 +627,7 @@ def download_edit(
     return Response(
         content=storage.get(edit_object_key(photo, edit)),
         media_type="image/jpeg",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": content_disposition(filename)},
     )
 
 

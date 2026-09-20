@@ -65,6 +65,7 @@ export interface Photo {
   quality: PhotoQuality
   best_score: number | null
   is_best: boolean
+  burst_group_id: string | null
   members: PhotoMember[]
 }
 

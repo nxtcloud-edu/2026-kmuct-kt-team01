@@ -147,6 +147,7 @@ flowchart LR
 | `?data=mock` | 백엔드 없이 UI를 둘러보는 브라우저 샘플 모드 |
 | `FACE_PROVIDER=mock` | 실제 API·DB·파일 저장 흐름에서 합성 분석 결과 사용 |
 | `FACE_PROVIDER=rekognition` | worker가 실제 AWS Rekognition 호출, 자동 mock 폴백 없음 |
+| `FACE_PROVIDER=local` | AWS 권한 문제 대비용. worker가 OpenCV(YuNet/SFace) 사전학습 모델로 실제 얼굴 탐지·비교를 로컬에서 수행 — AWS를 전혀 안 부르지만 mock과 달리 진짜 분석이다. 자세한 내용은 `backend/app/local_vision.py` docstring 참고 |
 
 ## 빠른 시작
 
@@ -238,7 +239,7 @@ VITE_API_TARGET=http://127.0.0.1:8000
 | `LOCAL_STORAGE_PATH` | 로컬 저장소 경로. API와 worker가 동일 위치 사용 |
 | `S3_BUCKET` | S3 모드에서 사용할 비공개 버킷 |
 | `AWS_REGION` | 현재 설계 리전 `us-east-1` |
-| `FACE_PROVIDER` | `mock` 또는 `rekognition` |
+| `FACE_PROVIDER` | `mock`, `rekognition` 또는 `local` (AWS 권한 문제 대비 오프라인 대체) |
 | `MOCK_MANIFEST_PATH` | mock 샘플 정의 파일. 기본 `backend/samples/mock_manifest.json` |
 
 ## 테스트
