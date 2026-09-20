@@ -4,9 +4,12 @@ import {
   type AnalysisCounts,
   type Coverage,
   type DataMode,
+  type MemberChange,
   type PageResult,
   type Photo,
   type PhotoFilters,
+  type PhotoMember,
+  type UploadBatchResponse,
 } from './types'
 
 export interface ReferenceResult {
@@ -22,16 +25,34 @@ export interface ApiClient {
   uploadReference(file: File): Promise<ReferenceResult>
   listPhotos(albumId: string, filters: PhotoFilters): Promise<PageResult<Photo>>
   getPhoto(id: string): Promise<Photo>
-  updatePhotoMembers(id: string, memberIds: string[]): Promise<Photo>
+  updatePhotoMembers(id: string, members: MemberChange[]): Promise<Photo>
   reanalyzePhoto(id: string): Promise<void>
   getStatus(albumId: string): Promise<AnalysisCounts>
   getCoverage(albumId: string): Promise<Coverage>
-  uploadPhotos(albumId: string, files: File[]): Promise<void>
+  uploadPhotos(albumId: string, files: File[]): Promise<UploadBatchResponse>
   downloadPhoto(id: string): Promise<void>
   downloadSelection(albumId: string, photoIds: string[]): Promise<void>
 }
 
 const API_BASE = '/api'
+
+type PhotoResponse = Omit<Photo, 'image_url' | 'thumb_url' | 'members'> & {
+  image_url?: string
+  thumb_url?: string
+  members: Array<Omit<PhotoMember, 'display_name'> & { display_name?: string }>
+}
+
+type PhotoPageResponse = Omit<PageResult<PhotoResponse>, 'total_pages'> & { total_pages?: number }
+
+function normalizePhoto(photo: PhotoResponse): Photo {
+  const imageUrl = photo.image_url ?? `${API_BASE}/photos/${photo.id}/download`
+  return {
+    ...photo,
+    image_url: imageUrl,
+    thumb_url: photo.thumb_url ?? imageUrl,
+    members: photo.members.map((member) => ({ ...member, display_name: member.display_name ?? member.member_id })),
+  }
+}
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response
@@ -88,17 +109,24 @@ export class HttpApiClient implements ApiClient {
     if (filters.shot_type) params.set('shot_type', filters.shot_type)
     if (filters.tag) params.set('tag', filters.tag)
     if (filters.only_best) params.set('only_best', 'true')
-    if (filters.sort) params.set('sort', filters.sort)
+    if (filters.sort) params.set('sort', {
+      captured_desc: 'captured_at_desc',
+      best_desc: 'best_score_desc',
+    }[filters.sort])
     params.set('page', String(filters.page ?? 1))
-    return request<PageResult<Photo>>(`/albums/${albumId}/photos?${params}`)
+    return request<PhotoPageResponse>(`/albums/${albumId}/photos?${params}`).then((page) => ({
+      ...page,
+      items: page.items.map(normalizePhoto),
+      total_pages: page.total_pages ?? Math.max(1, Math.ceil(page.total / page.page_size)),
+    }))
   }
 
-  getPhoto(id: string) { return request<Photo>(`/photos/${id}`) }
+  getPhoto(id: string) { return request<PhotoResponse>(`/photos/${id}`).then(normalizePhoto) }
 
-  updatePhotoMembers(id: string, memberIds: string[]) {
-    return request<Photo>(`/photos/${id}/members`, {
-      method: 'PUT', body: JSON.stringify({ member_ids: memberIds }),
-    })
+  updatePhotoMembers(id: string, members: MemberChange[]) {
+    return request<PhotoResponse>(`/photos/${id}/members`, {
+      method: 'PUT', body: JSON.stringify({ members }),
+    }).then(normalizePhoto)
   }
 
   reanalyzePhoto(id: string) { return request<void>(`/photos/${id}/reanalyze`, { method: 'POST' }) }
@@ -108,7 +136,12 @@ export class HttpApiClient implements ApiClient {
   uploadPhotos(albumId: string, files: File[]) {
     const body = new FormData()
     files.forEach((file) => body.append('files', file))
-    return request<void>(`/albums/${albumId}/photos`, { method: 'POST', body })
+    return request<UploadBatchResponse>(`/albums/${albumId}/photos`, { method: 'POST', body }).then((batch) => ({
+      results: batch.results.map((result) => ({
+        ...result,
+        photo: result.photo ? normalizePhoto(result.photo as PhotoResponse) : null,
+      })),
+    }))
   }
 
   async downloadPhoto(id: string) {
@@ -224,13 +257,13 @@ export class MockApiClient implements ApiClient {
     return structuredClone(photo)
   }
 
-  async updatePhotoMembers(id: string, memberIds: string[]) {
+  async updatePhotoMembers(id: string, changes: MemberChange[]) {
     const photo = this.photos.find((item) => item.id === id)
     if (!photo) throw new ApiError({ code: 'NOT_FOUND', message: '사진을 찾지 못했어요.' }, 404)
-    photo.members = memberIds.map((memberId) => {
-      const previous = photo.members.find((item) => item.member_id === memberId)
-      const member = members.find((item) => item.id === memberId)!
-      return previous ?? { member_id: memberId, display_name: member.display_name, similarity: null, source: 'manual', excluded: false }
+    photo.members = changes.map((change) => {
+      const previous = photo.members.find((item) => item.member_id === change.member_id)
+      const member = members.find((item) => item.id === change.member_id)!
+      return { ...(previous ?? { member_id: change.member_id, display_name: member.display_name, similarity: null }), source: 'manual', excluded: change.excluded }
     })
     await delay()
     return structuredClone(photo)
@@ -254,7 +287,10 @@ export class MockApiClient implements ApiClient {
     return { total: this.photos.length, members: members.map((member) => ({ member_id: member.id, display_name: member.display_name, photo_count: this.photos.filter((photo) => photo.members.some((item) => item.member_id === member.id && !item.excluded)).length })) }
   }
 
-  async uploadPhotos(_albumId: string, files: File[]) { await delay(Math.min(1000, files.length * 100)) }
+  async uploadPhotos(_albumId: string, files: File[]): Promise<UploadBatchResponse> {
+    await delay(Math.min(1000, files.length * 100))
+    return { results: files.map((file) => ({ filename: file.name, ok: true, photo: null, error: null })) }
+  }
   async downloadPhoto() { await delay(); window.alert('샘플 모드에서는 원본 다운로드를 실행하지 않아요.') }
   async downloadSelection() { await delay(); window.alert('샘플 모드에서는 ZIP 다운로드를 실행하지 않아요.') }
 }
