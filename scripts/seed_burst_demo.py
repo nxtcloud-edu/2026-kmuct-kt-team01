@@ -20,7 +20,7 @@ from pathlib import Path
 
 import httpx
 from itsdangerous import URLSafeSerializer
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 from backend.app.samples import add_sample
 
@@ -83,7 +83,10 @@ GROUPS = [
 
 
 def build_group_files(group_label: str, member_index: int, source_file: str, time_prefix: str, qualities):
-    base = Image.open(PHOTO_DIR / source_file).convert("RGB")
+    source = Image.open(PHOTO_DIR / source_file)
+    # 원본은 물리적으로는 옆으로 찍혀 있고 EXIF Orientation 태그로 바로 세워 보여진다.
+    # 아래서 새 EXIF(촬영시각)로 통째로 덮어쓰므로, 태그에 기대지 말고 지금 픽셀 자체를 바로 세운다.
+    base = ImageOps.exif_transpose(source).convert("RGB")
     base.thumbnail((1600, 1600))
     entries = []
     for i, ((name, brightness, blur, crop_pct), quality) in enumerate(zip(VARIANTS, qualities)):
