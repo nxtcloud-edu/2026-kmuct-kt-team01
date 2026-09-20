@@ -33,9 +33,13 @@ def test_worker_preserves_manual_links_and_marks_mock_mode(tmp_path, monkeypatch
     monkeypatch.setattr(
         "backend.app.worker.analyze",
         lambda *_: {
-            "faces": [{"member_id": member_id, "similarity": 99.0}],
-            "face_count": 1,
-            "shot_type": "solo",
+            "faces": [
+                {"member_id": member_id, "similarity": 99.0, "status": "matched"},
+                {"status": "uncertain"},
+                {"status": "unregistered"},
+            ],
+            "face_count": 3,
+            "shot_type": "group",
             "tags": ["person"],
             "quality": {"sharpness": 80.0},
             "best_score": 80.0,
@@ -51,6 +55,7 @@ def test_worker_preserves_manual_links_and_marks_mock_mode(tmp_path, monkeypatch
         links = list(db.scalars(select(PhotoMember).where(PhotoMember.photo_id == photo_id)))
         assert photo.analysis_status == "done"
         assert (photo.provider, photo.mode) == ("contract-fixture", "mock")
+        assert (photo.uncertain_face_count, photo.unregistered_face_count) == (1, 1)
         assert [(link.member_id, link.source, link.excluded) for link in links] == [
             (member_id, "manual", True)
         ]

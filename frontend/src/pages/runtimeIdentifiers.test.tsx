@@ -46,6 +46,7 @@ describe('runtime album identifiers', () => {
       id: 'p-1', album_id: 'album-real', filename: 'real.jpg', image_url: '/real.jpg', thumb_url: '/real.jpg',
       captured_at: null, created_at: '2026-09-20T00:00:00Z', analysis_status: 'done', analysis_error: null,
       provider: 'fixture', mode: 'mock', face_count: 1, shot_type: 'solo', tags: [], quality: {},
+      uncertain_face_count: 1, unregistered_face_count: 1,
       best_score: null, is_best: false,
       members: [{ member_id: 'member-real', display_name: '민지', similarity: 99, source: 'auto', excluded: false }],
     })
@@ -57,5 +58,8 @@ describe('runtime album identifiers', () => {
     expect(getPhoto).toHaveBeenCalledWith('p-1')
     expect(getAlbum).toHaveBeenCalledWith('album-real')
     expect(getAlbum).not.toHaveBeenCalledWith('album-demo')
+    expect(screen.getByText(/샘플 분석 · 실제 얼굴 인식/)).toBeTruthy()
+    expect(screen.getByText(/확인 필요 1명/)).toBeTruthy()
+    expect(screen.getByText('미등록 인물 1명')).toBeTruthy()
   })
 })

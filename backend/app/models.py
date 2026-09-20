@@ -131,6 +131,12 @@ class Photo(Base):
     provider: Mapped[str | None] = mapped_column(String(100))
     mode: Mapped[str | None] = mapped_column(String(100))
     face_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    uncertain_face_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    unregistered_face_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     shot_type: Mapped[str] = mapped_column(
         String(16), nullable=False, default=ShotType.UNKNOWN.value
     )

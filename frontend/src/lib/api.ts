@@ -48,6 +48,8 @@ function normalizePhoto(photo: PhotoResponse): Photo {
   const imageUrl = photo.image_url ?? `${API_BASE}/photos/${photo.id}/download`
   return {
     ...photo,
+    uncertain_face_count: photo.uncertain_face_count ?? 0,
+    unregistered_face_count: photo.unregistered_face_count ?? 0,
     image_url: imageUrl,
     thumb_url: photo.thumb_url ?? imageUrl,
     members: photo.members.map((member) => ({ ...member, display_name: member.display_name ?? member.member_id })),
@@ -204,6 +206,7 @@ function makePhotos(): Photo[] {
       analysis_status: status,
       analysis_error: status === 'failed' ? '사진 분석 중 일시적인 오류가 발생했어요.' : null,
       provider: 'sample', mode: 'mock', face_count: group ? linked.length : 1,
+      uncertain_face_count: 0, unregistered_face_count: 0,
       shot_type: group ? 'group' : 'solo',
       tags: index % 2 ? ['바다', '노을'] : ['제주', '여행'],
       quality: { sharpness: 82 + (index % 14), brightness: 72 + (index % 18), eyes_open_ratio: group ? .86 + (index % 3) * .05 : .98 },

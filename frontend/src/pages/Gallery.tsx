@@ -13,7 +13,10 @@ function ProgressBanner({ counts }: { counts: AnalysisCounts }) {
 }
 
 function PhotoCard({ photo, selectable, selected, onSelect, onOpen }: { photo: Photo; selectable: boolean; selected: boolean; onSelect: () => void; onOpen: () => void }) {
-  return <button className={`photo-card ${selected ? 'selected' : ''}`} onClick={selectable ? onSelect : onOpen} aria-label={`${photo.filename}${selected ? ', 선택됨' : ''}`}><img src={photo.thumb_url} alt="" loading="lazy" /><span className="photo-shade" />{selectable && <span className="select-check">{selected && <CheckIcon />}</span>}{photo.is_best && <span className="best-badge"><SparkleIcon />BEST</span>}{photo.analysis_status !== 'done' && <span className={`analysis-badge ${photo.analysis_status}`}>{photo.analysis_status === 'failed' ? '분석 실패' : '분석 중'}</span>}<span className="photo-meta"><span>{photo.members.slice(0, 3).map((member) => member.display_name).join(' · ') || '인물 없음'}</span><b>{photo.best_score ? `${Math.round(photo.best_score)}점` : ''}</b></span></button>
+  const people = photo.shot_type === 'no_face'
+    ? '사람 없는 사진'
+    : [photo.members.slice(0, 3).map((member) => member.display_name).join(' · '), photo.uncertain_face_count ? `확인 필요 ${photo.uncertain_face_count}` : '', photo.unregistered_face_count ? `미등록 인물 ${photo.unregistered_face_count}` : ''].filter(Boolean).join(' · ') || '인물 확인 필요'
+  return <button className={`photo-card ${selected ? 'selected' : ''}`} onClick={selectable ? onSelect : onOpen} aria-label={`${photo.filename}${selected ? ', 선택됨' : ''}`}><img src={photo.thumb_url} alt="" loading="lazy" /><span className="photo-shade" />{selectable && <span className="select-check">{selected && <CheckIcon />}</span>}{photo.is_best && <span className="best-badge"><SparkleIcon />BEST</span>}{photo.mode === 'mock' && <span className="analysis-badge">샘플 분석</span>}{photo.analysis_status !== 'done' && <span className={`analysis-badge ${photo.analysis_status}`}>{photo.analysis_status === 'failed' ? '분석 실패' : '분석 중'}</span>}<span className="photo-meta"><span>{people}</span></span></button>
 }
 
 export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage }: { client: ApiClient; albumId: string; currentMemberId: string; onOpen: (id: string) => void; onCoverage: () => void }) {

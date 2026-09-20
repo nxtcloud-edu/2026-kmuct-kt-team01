@@ -145,7 +145,8 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
             PhotoMember.excluded.is_(False),
         )
     )
-    for face in result.get("faces", []):
+    faces = list(result.get("faces", []))
+    for face in faces:
         if face.get("status") != "matched":
             continue
         member_id = face.get("member_id")
@@ -161,6 +162,8 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
             )
         )
     photo.face_count = int(result.get("face_count", 0))
+    photo.uncertain_face_count = sum(face.get("status") == "uncertain" for face in faces)
+    photo.unregistered_face_count = sum(face.get("status") == "unregistered" for face in faces)
     photo.shot_type = str(result.get("shot_type", "unknown"))
     photo.tags = list(result.get("tags", []))
     photo.quality = dict(result.get("quality", {}))

@@ -56,6 +56,8 @@ export interface Photo {
   provider: string | null
   mode: string | null
   face_count: number
+  uncertain_face_count?: number
+  unregistered_face_count?: number
   shot_type: ShotType
   tags: string[]
   quality: PhotoQuality

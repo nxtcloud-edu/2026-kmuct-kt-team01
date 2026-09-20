@@ -68,6 +68,8 @@ class PhotoOut(ORMModel):
     provider: str | None
     mode: str | None
     face_count: int
+    uncertain_face_count: int
+    unregistered_face_count: int
     shot_type: str
     tags: list[str]
     quality: dict[str, Any]
