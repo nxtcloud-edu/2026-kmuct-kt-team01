@@ -221,3 +221,68 @@ def test_auth_failure_never_becomes_a_mock_success(tmp_path, monkeypatch) -> Non
         assert photo.provider is None
         assert photo.mode is None
         assert photo.face_count == 0
+
+
+# --------------------------------------------------------------------------
+# 수동 수정 보존 — 재분석해도 사람이 고친 것을 덮어쓰지 않는다
+# --------------------------------------------------------------------------
+def member_ids(client, album_id: str) -> list[str]:
+    return [item["id"] for item in client.get(f"/api/albums/{album_id}").json()["members"]]
+
+
+def test_manual_member_link_survives_reanalyze(tmp_path, monkeypatch) -> None:
+    """수동으로 지정한 인물은 재분석 후에도 남아야 한다."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    me = member_ids(client, album["album_id"])[0]
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    manual = client.put(
+        f"/api/photos/{photo_id}/members",
+        json={"members": [{"member_id": me, "excluded": False}]},
+    )
+    assert manual.status_code == 200
+    assert manual.json()["members"][0]["source"] == "manual"
+
+    assert client.post(f"/api/photos/{photo_id}/reanalyze").status_code in (200, 202)
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    after = client.get(f"/api/photos/{photo_id}").json()["members"]
+    assert [(m["member_id"], m["source"]) for m in after] == [(me, "manual")]
+
+
+def test_manual_exclusion_survives_reanalyze(tmp_path, monkeypatch) -> None:
+    """사람이 '이 사람 아님'으로 제외한 것도 재분석이 되살리면 안 된다."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    me = member_ids(client, album["album_id"])[0]
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+    client.put(
+        f"/api/photos/{photo_id}/members",
+        json={"members": [{"member_id": me, "excluded": True}]},
+    )
+
+    client.post(f"/api/photos/{photo_id}/reanalyze")
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    after = client.get(f"/api/photos/{photo_id}").json()["members"]
+    excluded = [m for m in after if m["member_id"] == me]
+    assert excluded and excluded[0]["excluded"] is True
+
+
+def test_reanalyze_requeues_the_photo(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    client.post(f"/api/photos/{photo_id}/reanalyze")
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "pending"
+    assert process_one(app.state.session_factory, app.state.storage) is True
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "done"
