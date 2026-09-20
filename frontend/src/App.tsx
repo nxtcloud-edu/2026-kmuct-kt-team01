@@ -68,7 +68,7 @@ export default function App() {
     <div className="app">
       <AppHeader screen={screen} activeAlbum={activeAlbum} onNavigate={setScreen} />
       {screen === 'landing' && <Landing client={api} onComplete={(album) => { setActiveAlbum(album); setScreen('reference') }} onPreview={preview} />}
-      {screen === 'reference' && <ReferenceRegistration client={api} inviteCode={activeAlbum?.inviteCode} onDone={() => setScreen('album')} />}
+      {screen === 'reference' && <ReferenceRegistration client={api} onDone={() => setScreen('album')} />}
       {screen === 'album' && activeAlbum && <Gallery client={api} albumId={activeAlbum.albumId} currentMemberId={activeAlbum.memberId} onOpen={openPhoto} onCoverage={() => setScreen('coverage')} onReference={() => setScreen('reference')} />}
       {screen === 'detail' && activeAlbum && photoId && <PhotoDetail client={api} albumId={activeAlbum.albumId} photoId={photoId} onBack={() => setScreen('album')} />}
       {screen === 'coverage' && activeAlbum && <CoverageDashboard client={api} albumId={activeAlbum.albumId} onBack={() => setScreen('album')} />}

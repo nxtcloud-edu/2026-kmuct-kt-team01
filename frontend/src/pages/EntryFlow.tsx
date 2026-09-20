@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ApiClient } from '../lib/api'
 import { ApiError, type ActiveAlbum } from '../lib/types'
 import { ArrowIcon, CameraIcon, CheckIcon, SparkleIcon, UsersIcon } from '../components/icons'
-import { InviteCode } from '../components/InviteCode'
 
 export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum) => void; onPreview: () => void }) {
   const [form, setForm] = useState<'join' | 'create'>('join')
@@ -61,7 +60,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
   )
 }
 
-export function ReferenceRegistration({ client, onDone, inviteCode }: { client: ApiClient; onDone: () => void; inviteCode?: string }) {
+export function ReferenceRegistration({ client, onDone }: { client: ApiClient; onDone: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -86,7 +85,6 @@ export function ReferenceRegistration({ client, onDone, inviteCode }: { client: 
 
   return (
     <main className="onboarding page-shell">
-      {inviteCode && <InviteCode code={inviteCode} />}
       <div className="stepper"><span className="done"><CheckIcon /></span><i /><span className="active">2</span><i /><span>3</span></div>
       <div className="onboarding-heading"><span className="eyebrow">JUST ONE SELFIE</span><h1>내 사진을 찾아드릴게요</h1><p>혼자 나온 정면 사진 한 장이면 충분해요.<br />찍이 앨범 속 내 사진만 모아 보여줄게요.</p></div>
       <div className="reference-layout">
