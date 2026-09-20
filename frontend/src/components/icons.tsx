@@ -4,12 +4,17 @@ type IconProps = SVGProps<SVGSVGElement>
 const base = { width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true }
 
 export const LogoMarkIcon = (props: IconProps) => <svg viewBox="0 0 48 48" aria-hidden="true" {...props}>
-  <path d="M10 34.5C4 36 1.5 32 3.5 27.5 4.5 25 6.5 24 8.5 25" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" />
-  <circle cx="34" cy="12" r="7.5" fill="currentColor" />
-  <path fill="currentColor" d="M9 38.5C6.5 34 6.8 28.5 9.5 24 13 18.5 19 15.5 26 15.5 28.5 10.5 34 8.5 39 11.5 42 13.5 43 17 42 20l4 3-4.5 3C39.5 34.5 32.5 40.5 23.5 40.5H12c-1.3 0-2.3-.7-3-2Z" />
-  <circle cx="34" cy="12" r="3.5" fill="#e85b49" />
-  <circle cx="38.5" cy="19" r="1.5" fill="white" />
-  <circle cx="45.1" cy="23.1" r="1" fill="#6a3934" />
+  <path d="M11.5 32C7 34.8 2.2 33 2 28.6c-.2-4.8 4.1-7.6 7.5-5.2" fill="none" stroke="currentColor" strokeWidth="2.7" strokeLinecap="round" />
+  <ellipse cx="20.5" cy="30" rx="13.8" ry="11.5" fill="currentColor" />
+  <circle cx="34" cy="14" r="8.2" fill="currentColor" />
+  <circle cx="34" cy="14" r="4.6" fill="#ffd0c9" />
+  <path fill="currentColor" d="M26 25.5C27.3 18.7 32.1 15 38.2 15c4.5 0 7.5 3.6 7.5 7.6 0 .9-.1 1.8-.4 2.6l2.2 1.5c.6.4.6 1.3-.1 1.6l-2.9 1.3c-1.7 5.2-6.5 8.9-12.1 8.9-4.7 0-8.4-3.2-8.4-7.3 0-2 .7-3.7 2-5.2Z" />
+  <circle cx="39" cy="21.5" r="1.7" fill="#6a3934" />
+  <circle cx="39.5" cy="21" r=".55" fill="white" />
+  <circle cx="46.3" cy="27.2" r="1.45" fill="#f64f73" />
+  <path d="m42.4 29.1 5 1.8m-5.7.2 4.6 3" fill="none" stroke="#a94239" strokeWidth="1.15" strokeLinecap="round" />
+  <ellipse cx="16.8" cy="40.4" rx="3.2" ry="1.5" fill="#e85b49" />
+  <ellipse cx="31.5" cy="39.8" rx="3" ry="1.45" fill="#e85b49" />
 </svg>
 export const CameraIcon = (props: IconProps) => <svg {...base} {...props}><path d="M14.5 5 13 3h-2L9.5 5H5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"/><circle cx="12" cy="12.5" r="4"/></svg>
 export const UploadIcon = (props: IconProps) => <svg {...base} {...props}><path d="m12 16 0-11m-4 4 4-4 4 4"/><path d="M5 15v4h14v-4"/></svg>
