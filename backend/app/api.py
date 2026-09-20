@@ -45,6 +45,7 @@ from backend.app.schemas import (
     PhotoMembersUpdate,
     PhotoOut,
     PhotoPage,
+    RematchResult,
     StatusOut,
     UploadBatchResponse,
     UploadResult,
@@ -487,6 +488,43 @@ def reanalyze_photo(
     db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     db.commit()
     return photo_out(photo)
+
+
+@router.post("/albums/{album_id}/rematch", response_model=RematchResult)
+def rematch_unregistered_faces(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+) -> RematchResult:
+    """기준 사진을 뒤늦게 등록한 사람이 직접 눌러 얼굴 분류를 다시 돌린다.
+
+    이미 분석이 끝난 사진은 그때 기준 사진이 있던 멤버만 비교했다. 나중에 등록한 사람의
+    얼굴은 '미등록'으로 남아 있으므로, 미등록 얼굴이 있는 사진만 다시 큐에 넣는다.
+    전부 다시 돌리지 않는 이유는 사진 1장당 분석 호출이 다시 나가기 때문이다.
+    """
+    require_album_member(member, album_id)
+    if not member.reference_indexed or not member.reference_key:
+        raise ApiError(
+            409,
+            "REFERENCE_REQUIRED",
+            "기준 사진을 먼저 등록해야 얼굴을 다시 분류할 수 있습니다.",
+        )
+    photos = list(
+        db.scalars(
+            select(Photo).where(
+                Photo.album_id == album_id,
+                Photo.analysis_status == AnalysisStatus.DONE.value,
+                Photo.unregistered_face_count > 0,
+            )
+        ).all()
+    )
+    for photo in photos:
+        photo.analysis_status = AnalysisStatus.PENDING.value
+        photo.analysis_error = None
+        photo.processing_started_at = None
+        photo.analysis_attempts = 0
+    db.commit()
+    return RematchResult(queued=len(photos))
 
 
 @router.get("/albums/{album_id}/status", response_model=StatusOut)

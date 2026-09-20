@@ -431,6 +431,7 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("GET", "/api/photos/{photo_id}"),
         ("PUT", "/api/photos/{photo_id}/members"),
         ("POST", "/api/photos/{photo_id}/reanalyze"),
+        ("POST", "/api/albums/{album_id}/rematch"),
         ("GET", "/api/albums/{album_id}/status"),
         ("GET", "/api/albums/{album_id}/coverage"),
         ("GET", "/api/photos/{photo_id}/download"),

@@ -95,6 +95,8 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage, 
   const [error, setError] = useState<unknown>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadReport, setUploadReport] = useState<UploadBatchResponse | null>(null)
+  const [rematching, setRematching] = useState(false)
+  const [rematchNotice, setRematchNotice] = useState<string | null>(null)
 
   const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...(memberId ? [memberId] : [])])] : (memberId ? [memberId] : []), shot_type: tab === 'group' ? 'group' : undefined, face_status: faceStatus || undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberId, faceStatus, tag, currentMemberId])
   const gridItems = useMemo(() => groupForDisplay(photos), [photos])
@@ -113,12 +115,21 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage, 
   function toggleSelected(id: string) { setSelected((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]) }
   function toggleStackSelected(ids: string[]) { setSelected((items) => ids.every((id) => items.includes(id)) ? items.filter((id) => !ids.includes(id)) : [...new Set([...items, ...ids])]) }
   async function upload(files: FileList | null) { if (!files?.length) return; setUploading(true); setUploadReport(null); try { setUploadReport(await client.uploadPhotos(albumId, Array.from(files))); await load() } catch (caught) { setError(caught) } finally { setUploading(false) } }
+  async function rematchFaces() {
+    setRematching(true); setRematchNotice(null)
+    try {
+      const { queued } = await client.rematchFaces(albumId)
+      setRematchNotice(queued > 0 ? `${queued}장을 다시 분류하고 있어요.` : '다시 분류할 사진이 없어요.')
+      await load(false)
+    } catch (caught) { setError(caught) } finally { setRematching(false) }
+  }
   async function downloadSelected() { try { await client.downloadSelection(albumId, selected) } catch (caught) { setError(caught) } }
   function openStackOrPhoto(id: string) { setStackOpen(null); onOpen(id) }
 
   return <main className="album-page page-shell">
-    <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}{album && <InviteCodeCopyButton code={album.invite_code} />}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions">{onReference && album?.members.some((member) => member.id === currentMemberId && !member.reference_indexed) && <button className="button ghost" onClick={onReference}>기준 사진 등록</button>}<button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
+    <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}{album && <InviteCodeCopyButton code={album.invite_code} />}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions">{onReference && album?.members.some((member) => member.id === currentMemberId && !member.reference_indexed) && <button className="button ghost" onClick={onReference}>기준 사진 등록</button>}{album?.members.some((member) => member.id === currentMemberId && member.reference_indexed) && <button className="button ghost" onClick={() => void rematchFaces()} disabled={rematching}>{rematching ? '다시 분류 중…' : '내 얼굴로 다시 분류'}</button>}<button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
     {uploadReport && <div className={`upload-report ${uploadReport.results.some((result) => !result.ok) ? 'has-errors' : ''}`} role="status"><b>{uploadReport.results.filter((result) => result.ok).length}장 업로드 완료</b>{uploadReport.results.some((result) => !result.ok) && <span>실패: {uploadReport.results.filter((result) => !result.ok).map((result) => result.filename).join(', ')}</span>}<button onClick={() => setUploadReport(null)} aria-label="업로드 결과 닫기">×</button></div>}
+    {rematchNotice && <div className="upload-report" role="status"><b>{rematchNotice}</b><span>다시 분류한 사진은 보정본 승인이 초기화돼요.</span><button onClick={() => setRematchNotice(null)} aria-label="다시 분류 안내 닫기">×</button></div>}
     <ProgressBanner counts={counts} />
     {photos.some((photo) => photo.mode === 'mock') && <div className="mock-analysis-notice" role="note"><b>현재 로컬에서는 샘플 분석 결과를 표시하고 있어요.</b><span>얼굴 이름과 태그는 합성 결과입니다. 실제 얼굴별 분류는 AWS Rekognition 연결 후 정확해집니다.</span></div>}
     {photos.some((photo) => photo.mode === 'hybrid') && <div className="mock-analysis-notice" role="note"><b>장면 태그는 외부 AI가 분류했어요.</b><span>인물 이름과 사진 품질 점수는 얼굴 인식 엔진의 결과를 그대로 씁니다.</span></div>}

@@ -37,6 +37,8 @@ export interface ApiClient {
   updatePhotoMembers(id: string, members: MemberChange[]): Promise<Photo>
   reanalyzePhoto(id: string): Promise<void>
   getStatus(albumId: string): Promise<AnalysisCounts>
+  /** 미등록 얼굴이 있는 사진만 다시 분류 큐에 넣는다. 사용자가 직접 눌러야 실행된다. */
+  rematchFaces(albumId: string): Promise<{ queued: number }>
   getCoverage(albumId: string): Promise<Coverage>
   uploadPhotos(albumId: string, files: File[]): Promise<UploadBatchResponse>
   downloadPhoto(id: string): Promise<void>
@@ -143,6 +145,7 @@ export class HttpApiClient implements ApiClient {
 
   reanalyzePhoto(id: string) { return request<void>(`/photos/${id}/reanalyze`, { method: 'POST' }) }
   getStatus(albumId: string) { return request<AnalysisCounts>(`/albums/${albumId}/status`) }
+  rematchFaces(albumId: string) { return request<{ queued: number }>(`/albums/${albumId}/rematch`, { method: 'POST' }) }
   getCoverage(albumId: string) { return request<Coverage>(`/albums/${albumId}/coverage`) }
 
   uploadPhotos(albumId: string, files: File[]) {
@@ -297,6 +300,11 @@ export class MockApiClient implements ApiClient {
   async getStatus(): Promise<AnalysisCounts> {
     await delay(80)
     return this.photos.reduce<AnalysisCounts>((counts, photo) => ({ ...counts, [photo.analysis_status]: counts[photo.analysis_status] + 1 }), { pending: 0, processing: 0, done: 0, failed: 0 })
+  }
+
+  async rematchFaces(): Promise<{ queued: number }> {
+    await delay()
+    return { queued: this.photos.filter((photo) => photo.unregistered_face_count > 0).length }
   }
 
   async getCoverage(): Promise<Coverage> {
