@@ -3,6 +3,7 @@ export type ShotType = 'unknown' | 'no_face' | 'solo' | 'group'
 export type DataMode = 'mock' | 'api'
 
 export interface ActiveAlbum {
+  inviteCode?: string
   albumId: string
   memberId: string
   displayName: string
