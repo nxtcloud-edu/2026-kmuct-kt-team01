@@ -15,7 +15,10 @@ if config.config_file_name is not None:
 
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+    # Alembic stores main options in ConfigParser, where ``%`` starts
+    # interpolation. URL-encoded database passwords therefore need literal
+    # percent signs escaped before assigning the runtime URL.
+    config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
