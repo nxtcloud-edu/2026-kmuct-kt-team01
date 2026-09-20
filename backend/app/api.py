@@ -638,14 +638,36 @@ def download_album_selection(
     storage: Annotated[Storage, Depends(get_storage)],
 ) -> StreamingResponse:
     require_album_member(member, album_id)
-    unique_ids = list(dict.fromkeys(payload.photo_ids))
-    photos = list(
-        db.scalars(
-            select(Photo).where(Photo.album_id == album_id, Photo.id.in_(unique_ids))
-        ).all()
-    )
-    if len(photos) != len(unique_ids):
-        raise ApiError(404, "PHOTO_NOT_FOUND", "선택한 사진 일부를 찾을 수 없습니다.")
+    if payload.scope == "current_member":
+        photos = list(
+            db.scalars(
+                select(Photo)
+                .join(PhotoMember, PhotoMember.photo_id == Photo.id)
+                .where(
+                    Photo.album_id == album_id,
+                    PhotoMember.member_id == member.id,
+                    PhotoMember.excluded.is_(False),
+                )
+                .order_by(Photo.created_at, Photo.id)
+            ).all()
+        )
+        if not photos:
+            raise ApiError(
+                404,
+                "NO_PHOTOS_FOR_MEMBER",
+                "내가 나온 사진이 아직 없습니다.",
+            )
+    else:
+        unique_ids = list(dict.fromkeys(payload.photo_ids))
+        if not unique_ids:
+            raise ApiError(422, "NO_PHOTOS_SELECTED", "다운로드할 사진을 선택해 주세요.")
+        photos = list(
+            db.scalars(
+                select(Photo).where(Photo.album_id == album_id, Photo.id.in_(unique_ids))
+            ).all()
+        )
+        if len(photos) != len(unique_ids):
+            raise ApiError(404, "PHOTO_NOT_FOUND", "선택한 사진 일부를 찾을 수 없습니다.")
     selected: list[tuple[Photo, str, str]] = []
     for photo in photos:
         key = photo.s3_key

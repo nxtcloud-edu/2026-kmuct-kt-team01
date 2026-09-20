@@ -133,5 +133,6 @@ class EditCreate(BaseModel):
 
 
 class DownloadSelection(BaseModel):
-    photo_ids: list[str] = Field(min_length=1)
+    photo_ids: list[str] = Field(default_factory=list)
     version: Literal["original", "final"] = "original"
+    scope: Literal["selection", "current_member"] = "selection"

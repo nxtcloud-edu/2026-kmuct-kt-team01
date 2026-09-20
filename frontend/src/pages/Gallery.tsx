@@ -92,6 +92,7 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
   const [uploading, setUploading] = useState(false)
+  const [downloadingMine, setDownloadingMine] = useState(false)
   const [uploadReport, setUploadReport] = useState<UploadBatchResponse | null>(null)
 
   const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...(memberId ? [memberId] : [])])] : (memberId ? [memberId] : []), shot_type: tab === 'group' ? 'group' : undefined, face_status: faceStatus || undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberId, faceStatus, tag, currentMemberId])
@@ -112,10 +113,11 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage }
   function toggleStackSelected(ids: string[]) { setSelected((items) => ids.every((id) => items.includes(id)) ? items.filter((id) => !ids.includes(id)) : [...new Set([...items, ...ids])]) }
   async function upload(files: FileList | null) { if (!files?.length) return; setUploading(true); setUploadReport(null); try { setUploadReport(await client.uploadPhotos(albumId, Array.from(files))); await load() } catch (caught) { setError(caught) } finally { setUploading(false) } }
   async function downloadSelected() { try { await client.downloadSelection(albumId, selected) } catch (caught) { setError(caught) } }
+  async function downloadMine() { setDownloadingMine(true); try { await client.downloadSelection(albumId, [], 'current_member') } catch (caught) { setError(caught) } finally { setDownloadingMine(false) } }
   function openStackOrPhoto(id: string) { setStackOpen(null); onOpen(id) }
 
   return <main className="album-page page-shell">
-    <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions"><button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
+    <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions"><button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button secondary my-photos-download" onClick={() => void downloadMine()} disabled={downloadingMine} aria-label={downloadingMine ? '내 사진 준비 중' : '내 사진 받기'}><DownloadIcon />{downloadingMine ? '준비 중…' : '내 사진 받기'}</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
     {uploadReport && <div className={`upload-report ${uploadReport.results.some((result) => !result.ok) ? 'has-errors' : ''}`} role="status"><b>{uploadReport.results.filter((result) => result.ok).length}장 업로드 완료</b>{uploadReport.results.some((result) => !result.ok) && <span>실패: {uploadReport.results.filter((result) => !result.ok).map((result) => result.filename).join(', ')}</span>}<button onClick={() => setUploadReport(null)} aria-label="업로드 결과 닫기">×</button></div>}
     {album && <InviteCode key={album.id} code={album.invite_code} />}
     <ProgressBanner counts={counts} />

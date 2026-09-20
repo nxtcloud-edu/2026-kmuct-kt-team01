@@ -31,7 +31,7 @@ export interface ApiClient {
   getCoverage(albumId: string): Promise<Coverage>
   uploadPhotos(albumId: string, files: File[]): Promise<UploadBatchResponse>
   downloadPhoto(id: string): Promise<void>
-  downloadSelection(albumId: string, photoIds: string[]): Promise<void>
+  downloadSelection(albumId: string, photoIds: string[], scope?: 'selection' | 'current_member'): Promise<void>
 }
 
 const API_BASE = '/api'
@@ -153,17 +153,21 @@ export class HttpApiClient implements ApiClient {
     window.location.assign(response.url)
   }
 
-  async downloadSelection(albumId: string, photoIds: string[]) {
+  async downloadSelection(albumId: string, photoIds: string[], scope: 'selection' | 'current_member' = 'selection') {
     const response = await fetch(`${API_BASE}/albums/${albumId}/download`, {
       method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photo_ids: photoIds }),
+      body: JSON.stringify({ photo_ids: photoIds, scope }),
     })
-    if (!response.ok) throw new ApiError({ code: 'DOWNLOAD_FAILED', message: 'ZIP 파일을 만들지 못했어요.' }, response.status)
+    if (!response.ok) {
+      let body = { code: 'DOWNLOAD_FAILED', message: 'ZIP 파일을 만들지 못했어요.' }
+      try { body = await response.json() } catch { /* 공통 JSON 오류가 아니면 기본 문구를 사용한다. */ }
+      throw new ApiError(body, response.status)
+    }
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = 'zzik-photos.zip'
+    anchor.download = scope === 'current_member' ? 'zzik-my-photos.zip' : 'zzik-photos.zip'
     anchor.click()
     URL.revokeObjectURL(url)
   }
