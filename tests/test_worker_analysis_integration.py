@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+from datetime import datetime, timedelta, timezone
 
 from PIL import Image
 from sqlalchemy import select
@@ -203,7 +204,7 @@ def test_stored_error_does_not_leak_raw_aws_message(tmp_path, monkeypatch) -> No
     with app.state.session_factory() as db:
         stored = db.get(Photo, photo_id).analysis_error
     assert "raw aws detail" not in stored
-    assert "AWS 분석 권한을 확인해 주세요" in stored
+    assert stored == "AWS_AUTH"
 
 
 def test_auth_failure_never_becomes_a_mock_success(tmp_path, monkeypatch) -> None:
@@ -358,39 +359,87 @@ def test_photo_stays_pending_if_the_worker_dies_before_claiming(tmp_path) -> Non
         assert db.get(Photo, photo_id).analysis_status == "done"
 
 
-def test_interrupted_photo_is_left_processing_and_not_picked_up_again(tmp_path) -> None:
-    """**발견 사항.** claim 직후 worker 가 죽으면 사진이 processing 에 영구히 남는다.
-
-    `claim_one` 은 analysis_status == 'pending' 인 사진만 집는다. 그래서 중단된
-    사진은 어떤 worker 도 다시 집지 않고, 화면의 분석 현황에도 계속 '처리 중'으로
-    보인다. 재분석을 사람이 누르기 전까지 풀리지 않는다.
-
-    worker.py 는 3번 소유라 고치지 않았다. 이 테스트는 현재 동작을 고정해 두고
-    이슈로 올리기 위한 것이다. 고쳐지면 이 테스트를 함께 바꿔야 한다.
-    """
+def test_interrupted_photo_is_reclaimed_after_its_lease_expires(tmp_path) -> None:
     client, app = make_client(tmp_path)
     album = create_album(client)
     photo_id = upload_one(client, album["album_id"])
 
-    # claim 직후 프로세스가 죽은 상태를 만든다
     with app.state.session_factory() as db:
-        db.get(Photo, photo_id).analysis_status = "processing"
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "processing"
+        photo.processing_started_at = datetime.now(timezone.utc) - timedelta(minutes=6)
+        photo.analysis_attempts = 1
         db.commit()
 
-    # 새 worker 가 떠도 집어 가지 않는다 (큐가 비었다고 본다)
-    assert process_one(app.state.session_factory, app.state.storage) is False
+    assert process_one(app.state.session_factory, app.state.storage) is True
 
     with app.state.session_factory() as db:
-        assert db.get(Photo, photo_id).analysis_status == "processing"
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "done"
+        assert photo.analysis_attempts == 2
+        assert photo.processing_started_at is None
     status = client.get(f"/api/albums/{album['album_id']}/status").json()
-    assert status["processing"] == 1
+    assert status["done"] == 1
+    assert status["processing"] == 0
     assert status["pending"] == 0
 
-    # 지금은 사람이 재분석을 눌러야만 풀린다
-    client.post(f"/api/photos/{photo_id}/reanalyze")
-    assert process_one(app.state.session_factory, app.state.storage) is True
+
+def test_worker_does_not_steal_an_active_processing_lease(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
     with app.state.session_factory() as db:
-        assert db.get(Photo, photo_id).analysis_status == "done"
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "processing"
+        photo.processing_started_at = datetime.now(timezone.utc)
+        photo.analysis_attempts = 1
+        db.commit()
+
+    assert process_one(app.state.session_factory, app.state.storage) is False
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "processing"
+
+
+def test_interrupted_photo_stops_after_three_worker_attempts(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "processing"
+        photo.processing_started_at = datetime.now(timezone.utc) - timedelta(minutes=6)
+        photo.analysis_attempts = 3
+        db.commit()
+
+    assert process_one(app.state.session_factory, app.state.storage) is False
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "failed"
+        assert photo.analysis_error == "PROCESSING_RETRY_EXHAUSTED"
+        assert photo.processing_started_at is None
+
+
+def test_manual_reanalysis_resets_the_worker_attempt_budget(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "failed"
+        photo.analysis_error = "PROCESSING_RETRY_EXHAUSTED"
+        photo.analysis_attempts = 3
+        db.commit()
+
+    response = client.post(f"/api/photos/{photo_id}/reanalyze")
+    assert response.status_code == 200
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "pending"
+        assert photo.analysis_attempts == 0
+        assert photo.processing_started_at is None
 
 
 # --------------------------------------------------------------------------

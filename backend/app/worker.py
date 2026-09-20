@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.analysis_contract import AnalysisUnavailable, analyze
@@ -23,20 +23,53 @@ from backend.app.models import (
 from backend.app.storage import S3Storage, Storage, make_storage
 
 logger = logging.getLogger("zzik.worker")
+PROCESSING_LEASE = timedelta(minutes=5)
+MAX_PROCESSING_ATTEMPTS = 3
+PROCESSING_RETRY_EXHAUSTED = "PROCESSING_RETRY_EXHAUSTED"
 
 
-def claim_one(db: Session) -> str | None:
+def claim_one(db: Session, *, now: datetime | None = None) -> str | None:
+    now = now or datetime.now(timezone.utc)
+    stale_before = now - PROCESSING_LEASE
+    stale = and_(
+        Photo.analysis_status == AnalysisStatus.PROCESSING.value,
+        or_(
+            Photo.processing_started_at.is_(None),
+            Photo.processing_started_at <= stale_before,
+        ),
+    )
+    exhausted = list(
+        db.scalars(
+            select(Photo)
+            .where(stale, Photo.analysis_attempts >= MAX_PROCESSING_ATTEMPTS)
+            .with_for_update(skip_locked=True)
+        ).all()
+    )
+    for interrupted in exhausted:
+        interrupted.analysis_status = AnalysisStatus.FAILED.value
+        interrupted.analysis_error = PROCESSING_RETRY_EXHAUSTED
+        interrupted.processing_started_at = None
+    db.flush()
+
     photo = db.scalar(
         select(Photo)
-        .where(Photo.analysis_status == AnalysisStatus.PENDING.value)
+        .where(
+            or_(
+                Photo.analysis_status == AnalysisStatus.PENDING.value,
+                and_(stale, Photo.analysis_attempts < MAX_PROCESSING_ATTEMPTS),
+            )
+        )
         .order_by(Photo.created_at)
         .with_for_update(skip_locked=True)
         .limit(1)
     )
     if photo is None:
+        db.commit()
         return None
     photo.analysis_status = AnalysisStatus.PROCESSING.value
     photo.analysis_error = None
+    photo.processing_started_at = now
+    photo.analysis_attempts += 1
     db.commit()
     return photo.id
 
@@ -138,6 +171,7 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
     photo.is_best = True
     photo.analysis_status = AnalysisStatus.DONE.value
     photo.analysis_error = None
+    photo.processing_started_at = None
 
 
 def recompute_bursts(db: Session, album_id: str, shot_type: str) -> None:
@@ -216,6 +250,7 @@ def process_one(session_factory, storage) -> bool:
                 code, _, _ = error_fields(exc)
                 photo.analysis_status = AnalysisStatus.FAILED.value
                 photo.analysis_error = code[:1000]
+                photo.processing_started_at = None
                 db.commit()
             logger.exception("photo analysis failed", extra={"photo_id": photo_id})
     return True

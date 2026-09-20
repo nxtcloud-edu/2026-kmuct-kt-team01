@@ -412,6 +412,8 @@ def reanalyze_photo(
     photo = require_photo(db, member, photo_id, for_update=True)
     photo.analysis_status = AnalysisStatus.PENDING.value
     photo.analysis_error = None
+    photo.processing_started_at = None
+    photo.analysis_attempts = 0
     edit_ids = select(Edit.id).where(Edit.photo_id == photo.id)
     db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     db.commit()

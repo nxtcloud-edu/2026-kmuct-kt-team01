@@ -124,6 +124,10 @@ class Photo(Base):
         String(16), nullable=False, default=AnalysisStatus.PENDING.value
     )
     analysis_error: Mapped[str | None] = mapped_column(String(1000))
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    analysis_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     provider: Mapped[str | None] = mapped_column(String(100))
     mode: Mapped[str | None] = mapped_column(String(100))
     face_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

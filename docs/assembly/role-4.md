@@ -75,12 +75,12 @@
   재분석 시 수동 지정·제외 보존, no_face 와 failed 분리, captured_at NULL 유지,
   worker 중단 동작, 기준 셀카 실패 경로(422 NO_FACE / MULTIPLE_FACES)
 
-## 발견 사항 (3번에게 보고, 내가 고치지 않음)
+## worker 중단 복구
 
-`worker.claim_one` 은 `analysis_status == 'pending'` 인 사진만 집는다. 그래서
-claim 직후 worker 가 죽으면 그 사진은 **`processing` 에 영구히 갇힌다.** 어떤 worker 도
-다시 집지 않고 분석 현황 화면에 계속 "처리 중"으로 남으며, 사람이 재분석을 눌러야 풀린다.
-`worker.py` 는 3번 소유라 고치지 않고 현재 동작을 테스트로 고정한 뒤 이슈로 올렸다.
+#17에서 발견한 `processing` 영구 고착은 조립 브랜치에서 해결했다. worker는 5분이 지난
+lease만 회수하고 정상 처리 중인 사진은 건드리지 않는다. 프로세스 중단 기준 총 3회 뒤에는
+`PROCESSING_RETRY_EXHAUSTED`로 종료하며, 사용자가 재분석하면 시도 예산을 초기화한다.
+`tests/test_worker_analysis_integration.py`가 회수·활성 lease 보호·상한·수동 재시도를 검증한다.
 
 DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건드리지 않았다.
 샘플 이미지는 Pillow 로 그 자리에서 만든 합성 이미지이고 저장소에 실사진이 없다.
