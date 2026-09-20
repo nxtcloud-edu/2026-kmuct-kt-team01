@@ -13,6 +13,8 @@ from backend.app.config import get_settings
 from backend.app.database import make_engine, make_session_factory
 from backend.app.models import (
     AnalysisStatus,
+    Approval,
+    Edit,
     Member,
     MemberSource,
     Photo,
@@ -96,6 +98,8 @@ def comparable_time(value: datetime) -> datetime:
 
 
 def apply_result(db: Session, photo: Photo, result: dict) -> None:
+    edit_ids = select(Edit.id).where(Edit.photo_id == photo.id)
+    db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     preserved = {
         link.member_id: link
         for link in photo.member_links

@@ -36,7 +36,6 @@ from backend.app.schemas import (
     CoverageMember,
     CoverageOut,
     DownloadSelection,
-    EditCreate,
     MemberOut,
     PhotoMemberOut,
     PhotoMembersUpdate,
@@ -89,12 +88,17 @@ def require_album_member(member: Member, album_id: str) -> None:
         raise ApiError(403, "ALBUM_FORBIDDEN", "이 앨범에 접근할 권한이 없습니다.")
 
 
-def require_photo(db: Session, member: Member, photo_id: str) -> Photo:
-    photo = db.scalar(
+def require_photo(
+    db: Session, member: Member, photo_id: str, *, for_update: bool = False
+) -> Photo:
+    query = (
         select(Photo)
         .where(Photo.id == photo_id)
         .options(selectinload(Photo.member_links))
     )
+    if for_update:
+        query = query.with_for_update()
+    photo = db.scalar(query)
     if photo is None:
         raise ApiError(404, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다.")
     require_album_member(member, photo.album_id)
@@ -350,7 +354,7 @@ def update_photo_members(
     member: Annotated[Member, Depends(current_member)],
     db: Annotated[Session, Depends(get_db)],
 ) -> PhotoOut:
-    photo = require_photo(db, member, photo_id)
+    photo = require_photo(db, member, photo_id, for_update=True)
     member_ids = {item.member_id for item in payload.members}
     valid_ids = set(
         db.scalars(
@@ -392,9 +396,11 @@ def reanalyze_photo(
     member: Annotated[Member, Depends(current_member)],
     db: Annotated[Session, Depends(get_db)],
 ) -> PhotoOut:
-    photo = require_photo(db, member, photo_id)
+    photo = require_photo(db, member, photo_id, for_update=True)
     photo.analysis_status = AnalysisStatus.PENDING.value
     photo.analysis_error = None
+    edit_ids = select(Edit.id).where(Edit.photo_id == photo.id)
+    db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     db.commit()
     return photo_out(photo)
 
@@ -481,12 +487,43 @@ def delete_photo(
     return Response(status_code=204)
 
 
-def role_owned_not_ready(owner: str, feature: str) -> None:
-    raise ApiError(
-        501,
-        "FEATURE_NOT_CONNECTED",
-        f"{feature} 기능이 아직 통합되지 않았습니다.",
-        {"owner": owner, "mode": "unavailable"},
+def final_edit(db: Session, photo: Photo) -> Edit | None:
+    if photo.analysis_status != AnalysisStatus.DONE.value:
+        return None
+    active_ids = set(
+        db.scalars(select(Member.id).where(Member.album_id == photo.album_id)).all()
+    )
+    confirmed_ids = set(
+        db.scalars(
+            select(PhotoMember.member_id).where(
+                PhotoMember.photo_id == photo.id,
+                PhotoMember.excluded.is_(False),
+            )
+        ).all()
+    ) & active_ids
+    targets = confirmed_ids or (
+        {photo.uploader_member_id} if photo.uploader_member_id in active_ids else set()
+    )
+    if not targets:
+        return None
+    edits = list(
+        db.scalars(
+            select(Edit)
+            .where(Edit.photo_id == photo.id)
+            .order_by(Edit.number.desc())
+        ).all()
+    )
+    if not edits:
+        return None
+    approvals: dict[str, set[str]] = {}
+    for edit_id, member_id in db.execute(
+        select(Approval.edit_id, Approval.member_id).where(
+            Approval.edit_id.in_([edit.id for edit in edits])
+        )
+    ):
+        approvals.setdefault(edit_id, set()).add(member_id)
+    return next(
+        (edit for edit in edits if targets <= approvals.get(edit.id, set())), None
     )
 
 
@@ -499,8 +536,6 @@ def download_album_selection(
     storage: Annotated[Storage, Depends(get_storage)],
 ) -> StreamingResponse:
     require_album_member(member, album_id)
-    if payload.version == "final":
-        role_owned_not_ready("role-5", "최종 보정본 ZIP")
     unique_ids = list(dict.fromkeys(payload.photo_ids))
     photos = list(
         db.scalars(
@@ -509,15 +544,31 @@ def download_album_selection(
     )
     if len(photos) != len(unique_ids):
         raise ApiError(404, "PHOTO_NOT_FOUND", "선택한 사진 일부를 찾을 수 없습니다.")
+    selected: list[tuple[Photo, str, str]] = []
+    for photo in photos:
+        key = photo.s3_key
+        filename = photo.filename
+        if payload.version == "final":
+            edit = final_edit(db, photo)
+            if edit is None:
+                raise ApiError(
+                    409,
+                    "FINAL_EDIT_NOT_APPROVED",
+                    "전원 승인된 보정본이 없는 사진이 있습니다.",
+                    {"photo_id": photo.id},
+                )
+            key = f"albums/{photo.album_id}/photos/{photo.id}/edit-{edit.number}.jpg"
+            filename = f"{Path(photo.filename).stem}-edit-{edit.number}.jpg"
+        selected.append((photo, key, filename))
     archive = tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+b")
     used_names: set[str] = set()
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
-        for index, photo in enumerate(photos, start=1):
-            safe_name = Path(photo.filename).name.replace("\\", "_") or f"photo-{index}.jpg"
+        for index, (photo, key, filename) in enumerate(selected, start=1):
+            safe_name = Path(filename).name.replace("\\", "_") or f"photo-{index}.jpg"
             if safe_name in used_names:
                 safe_name = f"{index}-{safe_name}"
             used_names.add(safe_name)
-            output.writestr(safe_name, storage.get(photo.s3_key))
+            output.writestr(safe_name, storage.get(key))
     archive.seek(0)
 
     def chunks():
@@ -532,52 +583,6 @@ def download_album_selection(
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="zzik-photos.zip"'},
     )
-
-
-@router.post("/photos/{photo_id}/edits")
-def create_edit(
-    photo_id: str,
-    _: EditCreate,
-    member: Annotated[Member, Depends(current_member)],
-    db: Annotated[Session, Depends(get_db)],
-) -> None:
-    require_photo(db, member, photo_id)
-    role_owned_not_ready("role-5", "사진 보정")
-
-
-@router.get("/photos/{photo_id}/edits")
-def list_edits(
-    photo_id: str,
-    member: Annotated[Member, Depends(current_member)],
-    db: Annotated[Session, Depends(get_db)],
-) -> None:
-    require_photo(db, member, photo_id)
-    role_owned_not_ready("role-5", "보정 버전")
-
-
-@router.post("/edits/{edit_id}/approve")
-def approve_edit(
-    edit_id: str,
-    member: Annotated[Member, Depends(current_member)],
-    db: Annotated[Session, Depends(get_db)],
-) -> None:
-    edit = db.get(Edit, edit_id)
-    if edit is None:
-        raise ApiError(404, "EDIT_NOT_FOUND", "보정본을 찾을 수 없습니다.")
-    photo = db.get(Photo, edit.photo_id)
-    if photo is None:
-        raise ApiError(404, "PHOTO_NOT_FOUND", "사진을 찾을 수 없습니다.")
-    require_album_member(member, photo.album_id)
-    role_owned_not_ready("role-5", "보정 승인")
-
-
-@router.delete("/edits/{edit_id}/approve")
-def revoke_approval(
-    edit_id: str,
-    member: Annotated[Member, Depends(current_member)],
-    db: Annotated[Session, Depends(get_db)],
-) -> None:
-    approve_edit(edit_id, member, db)
 
 
 @router.get("/health/ready")
