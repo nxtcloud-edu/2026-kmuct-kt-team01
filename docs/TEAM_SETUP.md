@@ -30,7 +30,7 @@ IAM 사용자명은 비밀값이 아니지만 현재 값은 AWS 리소스 생성
 | 역할 1 | `infra/`, `scripts/`, `nginx.conf`, `systemd/` |
 | 역할 2 | `frontend/package.json`, `frontend/src/App.tsx`, 라우팅, 공통 스타일 |
 | 역할 3 | `backend/app/models.py`, `backend/alembic/`, `backend/requirements.txt` |
-| 역할 4 | `backend/app/analysis.py`, `backend/app/quality.py` |
+| 역할 4 | `backend/app/analysis.py`, `backend/app/quality.py`, `backend/app/local_vision.py`, `backend/models/` |
 | 역할 5 | `backend/app/edits.py` |
 
 소유하지 않은 파일 변경은 GitHub 이슈로 담당자에게 요청하며 병행 덮어쓰지 않는다.
@@ -42,3 +42,6 @@ IAM 사용자명은 비밀값이 아니지만 현재 값은 AWS 리소스 생성
 - 원격에서 역할 3 브랜치가 확인됐다. 다른 역할의 실제 진행 상태는 확인하지 않았다.
 - AWS 자원, IAM 인스턴스 프로파일, EC2 주소, 실제 Rekognition 호출은 아직 미검증이다.
 - IAM 인스턴스 프로파일이 보이지 않으면 팀은 `FACE_PROVIDER=mock`으로 진행하고 QnA에 문의한다.
+- 발표·심사 화면에서 "샘플 분석" 배지 없이 실제 얼굴 인식이 꼭 필요한데 AWS 권한이 끝내 안 풀리면
+  `FACE_PROVIDER=local`(OpenCV 로컬 모델, AWS 미사용)로 대체할 수 있다. `backend/app/local_vision.py`
+  docstring과 README `FACE_PROVIDER` 표 참고.
