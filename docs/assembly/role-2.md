@@ -6,7 +6,7 @@
 - 기준 브랜치: `main`
 - 담당 계정: `seopseopi`
 - Draft PR: https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2
-- 최근 기능 커밋: `b5b611c532c7937e9abe81c4d1f9e10e28ca9ce7`
+- 최근 기능 커밋: `1df5ad3f6f65e9e45025eb495b06f44b544a42a2`
 - 현재 단계: 프론트 mock 구현 및 브라우저 검증 완료, 실제 백엔드와 역할 5 컴포넌트 연결 대기
 
 ## 기능별 커밋
@@ -17,6 +17,7 @@
 4. `795b73f` — 갤러리, 2초 상태 폴링, 멤버 AND 필터, 태그, 페이지네이션, ZIP 선택
 5. `6cc2524` — 사진 상세, 인물 수정, 품질, 원본 요청, 누락 현황, 역할 5 편집 슬롯
 6. `b5b611c` — API·상태 컴포넌트 테스트와 실행 문서
+7. `1df5ad3` — 역할 5 리뷰 반영, 실제 백엔드 payload·정렬·업로드 결과 정합화
 
 ## 구현 상태
 
@@ -42,7 +43,7 @@
 ## 검사
 
 - `npm run typecheck` — 통과
-- `npm test` — 2 files, 7 tests 통과
+- `npm test` — 2 files, 10 tests 통과
 - `npm run build` — 통과
 - `npm audit --audit-level=moderate` — 취약점 0건
 - Playwright — 데스크톱/390px 모바일, 랜딩→앨범→사진 상세, 콘솔 오류 0건
@@ -60,3 +61,4 @@
 - `ZZIK:20260920:role-2:editor-slot-01` → role-5, REQUESTED
   - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/5
 - PR #2 교차 검토자 `tkdgur3207` 지정 완료
+- role-5 계약 리뷰 `5258615747` → APPLIED (`1df5ad3`), 최신 head 재검토 요청
