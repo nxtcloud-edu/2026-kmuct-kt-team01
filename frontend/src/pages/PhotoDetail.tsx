@@ -5,9 +5,7 @@ import { ErrorState, Spinner } from '../components/AsyncState'
 import { ChartIcon, DownloadIcon } from '../components/icons'
 import EditorPanel from '../editor/EditorPanel'
 
-const albumId = 'album-demo'
-
-export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; photoId: string; onBack: () => void }) {
+export function PhotoDetail({ client, albumId, photoId, onBack }: { client: ApiClient; albumId: string; photoId: string; onBack: () => void }) {
   const [photo, setPhoto] = useState<Photo | null>(null)
   const [album, setAlbum] = useState<Album | null>(null)
   const [error, setError] = useState<unknown>(null)
@@ -17,7 +15,7 @@ export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; ph
     setError(null)
     try { const [photoResult, albumResult] = await Promise.all([client.getPhoto(photoId), client.getAlbum(albumId)]); setPhoto(photoResult); setAlbum(albumResult); setMemberIds(photoResult.members.filter((member) => !member.excluded).map((member) => member.member_id)) }
     catch (caught) { setError(caught) }
-  }, [client, photoId])
+  }, [client, albumId, photoId])
   useEffect(() => { void load() }, [load])
   async function saveMembers() { try { setPhoto(await client.updatePhotoMembers(photoId, album?.members.map((member) => ({ member_id: member.id, excluded: !memberIds.includes(member.id) })) ?? [])); setEditingPeople(false) } catch (caught) { setError(caught) } }
   async function reanalyze() { try { await client.reanalyzePhoto(photoId); await load() } catch (caught) { setError(caught) } }
@@ -43,10 +41,10 @@ export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; ph
   </main>
 }
 
-export function CoverageDashboard({ client, onBack }: { client: ApiClient; onBack: () => void }) {
+export function CoverageDashboard({ client, albumId, onBack }: { client: ApiClient; albumId: string; onBack: () => void }) {
   const [coverage, setCoverage] = useState<Coverage | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const load = useCallback(() => client.getCoverage(albumId).then(setCoverage).catch(setError), [client])
+  const load = useCallback(() => client.getCoverage(albumId).then(setCoverage).catch(setError), [client, albumId])
   useEffect(() => { void load() }, [load])
   return <main className="coverage-page page-shell"><button className="back-button" onClick={onBack}>‹ <span>앨범으로</span></button><div className="coverage-heading"><span className="eyebrow">NO ONE LEFT BEHIND</span><h1>사진 누락 현황</h1><p>모든 멤버가 여행 사진을 빠짐없이 받았는지 확인하세요.</p></div>{error ? <ErrorState error={error} onRetry={() => void load()} /> : !coverage ? <Spinner /> : <><section className="coverage-total"><span><ChartIcon /></span><div><small>앨범 전체 사진</small><b>{coverage.total}<em>장</em></b></div><p>인물 분석 결과를 기준으로 집계했어요.</p></section><section className="coverage-list"><div className="coverage-list-head"><h2>멤버별 사진</h2><span>전체 {coverage.total}장 기준</span></div>{coverage.members.map((member, index) => { const rate = coverage.total ? Math.round(member.photo_count / coverage.total * 100) : 0; return <article key={member.member_id}><span className={`avatar color-${index}`}>{member.display_name[0]}</span><div><div><b>{member.display_name}</b><span>{member.photo_count}장 · {rate}%</span></div><i><em style={{ width: `${rate}%` }} /></i></div>{member.photo_count === 0 && <strong>확인 필요</strong>}</article> })}</section></>}</main>
 }

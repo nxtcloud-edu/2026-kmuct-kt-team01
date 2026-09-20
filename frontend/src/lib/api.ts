@@ -19,7 +19,7 @@ export interface ReferenceResult {
 }
 
 export interface ApiClient {
-  createAlbum(name: string, displayName: string): Promise<{ album_id: string; invite_code: string }>
+  createAlbum(name: string, displayName: string): Promise<{ album_id: string; member_id: string; invite_code: string }>
   joinAlbum(inviteCode: string, displayName: string): Promise<{ album_id: string; member_id: string }>
   getAlbum(id: string): Promise<Album>
   uploadReference(file: File): Promise<ReferenceResult>
@@ -84,7 +84,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export class HttpApiClient implements ApiClient {
   createAlbum(name: string, displayName: string) {
-    return request<{ album_id: string; invite_code: string }>('/albums', {
+    return request<{ album_id: string; member_id: string; invite_code: string }>('/albums', {
       method: 'POST', body: JSON.stringify({ name, display_name: displayName }),
     })
   }
@@ -222,7 +222,7 @@ const delay = (ms = 180) => new Promise((resolve) => window.setTimeout(resolve, 
 export class MockApiClient implements ApiClient {
   private photos = makePhotos()
 
-  async createAlbum() { await delay(); return { album_id: 'album-demo', invite_code: 'JEJU26' } }
+  async createAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1', invite_code: 'JEJU26' } }
   async joinAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1' } }
 
   async getAlbum(): Promise<Album> {

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ApiClient } from '../lib/api'
-import { ApiError } from '../lib/types'
+import { ApiError, type ActiveAlbum } from '../lib/types'
 import { ArrowIcon, CameraIcon, CheckIcon, SparkleIcon, UsersIcon } from '../components/icons'
 
-export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: () => void; onPreview: () => void }) {
+export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum) => void; onPreview: () => void }) {
   const [form, setForm] = useState<'join' | 'create'>('join')
   const [name, setName] = useState('')
   const [albumName, setAlbumName] = useState('')
@@ -20,9 +20,11 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
     }
     setLoading(true)
     try {
-      if (form === 'join') await client.joinAlbum(inviteCode.trim().toUpperCase(), name.trim())
-      else await client.createAlbum(albumName.trim(), name.trim())
-      onComplete()
+      const displayName = name.trim()
+      const result = form === 'join'
+        ? await client.joinAlbum(inviteCode.trim().toUpperCase(), displayName)
+        : await client.createAlbum(albumName.trim(), displayName)
+      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '요청을 처리하지 못했어요.')
     } finally {
