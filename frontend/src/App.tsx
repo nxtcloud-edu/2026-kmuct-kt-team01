@@ -69,7 +69,7 @@ export default function App() {
       <AppHeader screen={screen} activeAlbum={activeAlbum} onNavigate={setScreen} />
       {screen === 'landing' && <Landing client={api} onComplete={(album) => { setActiveAlbum(album); setScreen('reference') }} onPreview={preview} />}
       {screen === 'reference' && <ReferenceRegistration client={api} inviteCode={activeAlbum?.inviteCode} onDone={() => setScreen('album')} />}
-      {screen === 'album' && activeAlbum && <Gallery client={api} albumId={activeAlbum.albumId} currentMemberId={activeAlbum.memberId} onOpen={openPhoto} onCoverage={() => setScreen('coverage')} />}
+      {screen === 'album' && activeAlbum && <Gallery client={api} albumId={activeAlbum.albumId} currentMemberId={activeAlbum.memberId} onOpen={openPhoto} onCoverage={() => setScreen('coverage')} onReference={() => setScreen('reference')} />}
       {screen === 'detail' && activeAlbum && photoId && <PhotoDetail client={api} albumId={activeAlbum.albumId} photoId={photoId} onBack={() => setScreen('album')} />}
       {screen === 'coverage' && activeAlbum && <CoverageDashboard client={api} albumId={activeAlbum.albumId} onBack={() => setScreen('album')} />}
       {['album', 'detail', 'coverage'].includes(screen) && <nav className="mobile-nav"><button className={screen !== 'coverage' ? 'active' : ''} onClick={() => setScreen('album')}><GridIcon />사진</button><button className={screen === 'coverage' ? 'active' : ''} onClick={() => setScreen('coverage')}><ChartIcon />현황</button></nav>}
