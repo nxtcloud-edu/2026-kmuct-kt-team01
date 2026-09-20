@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.insights import (
+from backend.app.insights import (
     AUTH_MESSAGE_KO,
     DEFAULT_MODEL_ID,
     AnalysisError,

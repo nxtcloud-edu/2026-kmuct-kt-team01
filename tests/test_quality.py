@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 from PIL import Image
 
-from app.quality import (
+from backend.app.quality import (
     MAX_IMAGE_BYTES,
     MIN_IMAGE_SIDE,
     AnalysisError,
@@ -22,7 +22,7 @@ from app.quality import (
     prepare_image,
     shot_type_for,
 )
-from conftest import make_image
+from tests.conftest import make_image
 
 
 # --------------------------------------------------------------------------
