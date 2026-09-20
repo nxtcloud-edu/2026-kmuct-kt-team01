@@ -340,3 +340,54 @@ def test_missing_capture_time_stays_null(tmp_path) -> None:
         assert db.get(Photo, photo_id).captured_at is None
     detail = client.get(f"/api/photos/{photo_id}").json()
     assert detail["captured_at"] is None
+
+
+# --------------------------------------------------------------------------
+# worker 중단 — 처리 도중 죽으면 어떻게 되는가
+# --------------------------------------------------------------------------
+def test_photo_stays_pending_if_the_worker_dies_before_claiming(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "pending"
+    # 새 worker 가 떠도 그대로 집어 간다
+    assert process_one(app.state.session_factory, app.state.storage) is True
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "done"
+
+
+def test_interrupted_photo_is_left_processing_and_not_picked_up_again(tmp_path) -> None:
+    """**발견 사항.** claim 직후 worker 가 죽으면 사진이 processing 에 영구히 남는다.
+
+    `claim_one` 은 analysis_status == 'pending' 인 사진만 집는다. 그래서 중단된
+    사진은 어떤 worker 도 다시 집지 않고, 화면의 분석 현황에도 계속 '처리 중'으로
+    보인다. 재분석을 사람이 누르기 전까지 풀리지 않는다.
+
+    worker.py 는 3번 소유라 고치지 않았다. 이 테스트는 현재 동작을 고정해 두고
+    이슈로 올리기 위한 것이다. 고쳐지면 이 테스트를 함께 바꿔야 한다.
+    """
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
+    # claim 직후 프로세스가 죽은 상태를 만든다
+    with app.state.session_factory() as db:
+        db.get(Photo, photo_id).analysis_status = "processing"
+        db.commit()
+
+    # 새 worker 가 떠도 집어 가지 않는다 (큐가 비었다고 본다)
+    assert process_one(app.state.session_factory, app.state.storage) is False
+
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "processing"
+    status = client.get(f"/api/albums/{album['album_id']}/status").json()
+    assert status["processing"] == 1
+    assert status["pending"] == 0
+
+    # 지금은 사람이 재분석을 눌러야만 풀린다
+    client.post(f"/api/photos/{photo_id}/reanalyze")
+    assert process_one(app.state.session_factory, app.state.storage) is True
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).analysis_status == "done"
