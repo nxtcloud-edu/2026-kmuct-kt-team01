@@ -41,6 +41,7 @@ describe('App refresh recovery', () => {
 
     fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: 'NEXT_album-2' } })
     fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '수진' } })
+    fireEvent.change(screen.getByLabelText('비밀번호'), { target: { value: 'pass1234' } })
     fireEvent.click(screen.getByRole('button', { name: /앨범 들어가기/ }))
 
     await screen.findByText('내 사진을 찾아드릴게요')
