@@ -1,0 +1,7 @@
+# Local ROLE-05 verification environments; never publish interpreters/test caches.
+.venv-role5/
+.venv-role5-py313/
+.role5-tools/
+.pytest_cache/
+__pycache__/
+*.py[cod]
