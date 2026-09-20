@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import io
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Sequence
@@ -33,7 +32,6 @@ __all__ = [
     "face_metrics",
     "compute_best_score",
     "extract_capture_metadata",
-    "group_bursts",
 ]
 
 
@@ -501,79 +499,3 @@ def _dms_to_degrees(dms: Any, ref: Any) -> float | None:
     if str(ref).strip().upper() in {"S", "W"}:
         value = -value
     return value
-
-
-# --------------------------------------------------------------------------
-# 연사(버스트) 그룹화 — 베스트컷 추천의 근거
-# --------------------------------------------------------------------------
-_BURST_NAMESPACE = uuid.UUID("6f1d0f0c-6b1e-5f2b-9a2f-7a3c1d4e5f60")
-
-
-def group_bursts(
-    items: Sequence[Mapping[str, Any]],
-    window_seconds: float = 3.0,
-) -> dict[str, dict[str, Any]]:
-    """연속 촬영 묶음을 만들고 묶음마다 대표 컷 하나를 고른다.
-
-    입력: [{id, captured_at?, created_at?, best_score?}, ...]
-      captured_at 이 있으면 그걸 쓰고, 없으면 created_at 을 쓴다.
-      시각이 아예 없는 사진은 그룹을 만들지 않는다(추측하지 않는다).
-    출력: {photo_id: {"burst_group_id": str|None, "is_best": bool}}
-
-    연사 그룹이 아닌 단독 사진은 burst_group_id=None, is_best=True 로 둔다.
-    (only_best 필터가 "연사에서 탈락한 컷만" 걸러내도록 하기 위함)
-
-    DB 에 쓰지 않는다. 결과를 3번이 저장한다.
-    """
-    timed: list[tuple[datetime, str, float]] = []
-    result: dict[str, dict[str, Any]] = {}
-
-    for item in items or []:
-        photo_id = str(item.get("id"))
-        score = float(item.get("best_score") or 0.0)
-        moment = _coerce_datetime(item.get("captured_at")) or _coerce_datetime(item.get("created_at"))
-        if moment is None:
-            result[photo_id] = {"burst_group_id": None, "is_best": True}
-            continue
-        timed.append((moment, photo_id, score))
-
-    timed.sort(key=lambda row: (row[0], row[1]))
-
-    group: list[tuple[datetime, str, float]] = []
-    for row in timed:
-        if group and (row[0] - group[-1][0]).total_seconds() > window_seconds:
-            _flush_burst(group, result)
-            group = []
-        group.append(row)
-    _flush_burst(group, result)
-
-    return result
-
-
-def _flush_burst(group: list[tuple[datetime, str, float]], result: dict[str, dict[str, Any]]) -> None:
-    if not group:
-        return
-    if len(group) == 1:
-        result[group[0][1]] = {"burst_group_id": None, "is_best": True}
-        return
-
-    group_id = str(uuid.uuid5(_BURST_NAMESPACE, group[0][1]))
-    # 대표 컷: best_score 최고 → 동점이면 먼저 찍힌 것 → 그래도 동점이면 id 순
-    best = max(group, key=lambda row: (row[2], -row[0].timestamp(), row[1]))
-    for moment, photo_id, _score in group:
-        result[photo_id] = {
-            "burst_group_id": group_id,
-            "is_best": photo_id == best[1],
-        }
-
-
-def _coerce_datetime(value: Any) -> datetime | None:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo else value
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed

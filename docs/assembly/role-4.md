@@ -43,7 +43,7 @@
 | 인증 실패를 mock 성공으로 바꾸지 않음 | 완료·검증 |
 | mock 모드(해시 시드, manifest, mode='mock', synthetic 표시) | 완료·검증 |
 | EXIF 촬영시각·GPS, 없으면 null (추측 안 함) | 완료·검증 |
-| 연사 그룹화 `group_bursts` | 완료·검증 (단, worker 는 자체 `recompute_bursts` 를 쓴다 — 아래 참고) |
+| 연사 그룹화 | `worker.recompute_bursts`를 정식 경로로 확정·검증 |
 | **3번 worker ORM members 수용 + `load_reference` 훅** | 완료·검증 |
 | Bedrock 여행 요약 (8-a) | **부분** — 가짜 클라이언트 검증 완료, 실제 Bedrock 호출 **미검증** |
 | 자연어 검색 구조화 (8-b) | 완료 — 규칙 파서 검증 완료, bedrock 경로는 가짜 클라이언트만 |
@@ -63,7 +63,7 @@
 - `tests/test_analysis.py` — 제공자 설정, validate_reference 3종, 호출 순서,
   매칭 판정(확정/모호/임계미달/IoU미달/중복), 태그, 오류 변환 7종, 멤버 스킵,
   ORM 객체·로더 경로, mock 결정성·manifest
-- `tests/test_quality.py` — 이미지 검사·축소, IoU, 태그, 품질 공식, EXIF 유/무, 연사 그룹화
+- `tests/test_quality.py` — 이미지 검사·축소, IoU, 태그, 품질 공식, EXIF 유/무
 - `tests/test_contract_examples.py` — 3번이 받을 응답·오류 형태
 - `tests/test_insights.py` — 대표 사진 선정, 집계 사실, mock/off, Bedrock 요청·응답·오류,
   자연어 검색 규칙 파서와 지어낸 태그/이름 제거
@@ -95,9 +95,9 @@ DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건�
 | 기준 셀카 로딩 경로 | **해결됨.** 3번이 `worker.analysis_members(members, storage)` 로 ORM Member 를 `reference_bytes`/`reference_s3` dict 로 바꿔 넘긴다. 내 `load_reference` 훅은 대안으로만 남긴다 |
 | `requirements.txt` 의 `anthropic[bedrock]` | **해결됨.** 3번이 `anthropic[bedrock]==1.7.0` 추가 |
 | `tests/test_api.py` | **해결됨.** 3번이 직접 `test_reference_endpoint_uses_role_four_mock_and_stores_reference` 로 고쳤다. 충돌을 없애려고 내 버전을 버리고 3번 것을 그대로 채택했다 |
-| 연사 그룹화 중복 | **열려 있음.** `worker.recompute_bursts` 와 내 `quality.group_bursts` 가 같은 일을 한다. 3번 것이 DB 에 붙어 동작하므로 그대로 두고 내 함수는 남겨만 뒀다. 정리 여부는 3번이 정한다 |
+| 연사 그룹화 중복 | **해결됨.** DB에 연결된 `worker.recompute_bursts`를 유지하고 미사용 `quality.group_bursts`는 조립 브랜치에서 제거했다. 촬영 시각이 없는 사진은 단독 베스트 상태를 유지한다 |
 
-`assemble/20260920` 에 아직 안 들어간 내 커밋: `61ffc18`, `d13ef63`, `0bf49e7`, `70b29cb`, 그 이후.
+`61ffc18`, `d13ef63`, `0bf49e7`, `70b29cb`, `7ecbff6`은 `assemble/20260920`에 반영됐다.
 
 ## 파일 소유권 메모
 
