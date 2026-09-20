@@ -286,3 +286,57 @@ def test_reanalyze_requeues_the_photo(tmp_path) -> None:
     assert process_one(app.state.session_factory, app.state.storage) is True
     with app.state.session_factory() as db:
         assert db.get(Photo, photo_id).analysis_status == "done"
+
+
+# --------------------------------------------------------------------------
+# 사람 없는 사진 / 분석 실패 구분 — 둘을 섞으면 화면이 거짓말을 한다
+# --------------------------------------------------------------------------
+def test_photo_without_faces_is_done_not_failed(tmp_path, monkeypatch) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    register_sample(app, monkeypatch, tmp_path, photo_id, {"face_count": 0, "tags": ["산"]})
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "done"      # 실패가 아니다
+        assert photo.analysis_error is None
+        assert photo.shot_type == "no_face"
+        assert photo.face_count == 0
+
+
+def test_failed_and_no_face_are_separate_states(tmp_path, monkeypatch) -> None:
+    """status 집계에서 '사람 없는 사진'과 '분석 실패'가 섞이지 않아야 한다."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    empty_id = upload_one(client, album["album_id"], "empty.jpg")
+    register_sample(app, monkeypatch, tmp_path, empty_id, {"face_count": 0, "tags": []})
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    broken_id = upload_one(client, album["album_id"], "broken.jpg", photo_bytes("#112233"))
+    use_rekognition(monkeypatch, CountingRekognition(aws_error("AccessDeniedException")))
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    status = client.get(f"/api/albums/{album['album_id']}/status").json()
+    assert status["done"] == 1
+    assert status["failed"] == 1
+
+    with app.state.session_factory() as db:
+        assert db.get(Photo, empty_id).shot_type == "no_face"
+        assert db.get(Photo, broken_id).analysis_status == "failed"
+
+
+def test_missing_capture_time_stays_null(tmp_path) -> None:
+    """EXIF 가 없으면 촬영 시각을 지어내지 않고 NULL 로 둔다."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    with app.state.session_factory() as db:
+        assert db.get(Photo, photo_id).captured_at is None
+    detail = client.get(f"/api/photos/{photo_id}").json()
+    assert detail["captured_at"] is None
