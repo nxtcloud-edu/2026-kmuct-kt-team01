@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
@@ -45,7 +45,6 @@ from backend.app.schemas import (
     PhotoMembersUpdate,
     PhotoOut,
     PhotoPage,
-    RematchResult,
     StatusOut,
     UploadBatchResponse,
     UploadResult,
@@ -490,41 +489,65 @@ def reanalyze_photo(
     return photo_out(photo)
 
 
-@router.post("/albums/{album_id}/rematch", response_model=RematchResult)
-def rematch_unregistered_faces(
+@router.post("/albums/{album_id}/reanalyze", response_model=StatusOut)
+def reanalyze_album(
     album_id: str,
     member: Annotated[Member, Depends(current_member)],
     db: Annotated[Session, Depends(get_db)],
-) -> RematchResult:
-    """기준 사진을 뒤늦게 등록한 사람이 직접 눌러 얼굴 분류를 다시 돌린다.
+    scope: Annotated[Literal["failed", "all", "unmatched"], Query()] = "failed",
+) -> StatusOut:
+    """앨범의 사진을 일괄로 분석 대기열로 되돌린다. 사용자가 직접 눌러야 실행된다.
 
-    이미 분석이 끝난 사진은 그때 기준 사진이 있던 멤버만 비교했다. 나중에 등록한 사람의
-    얼굴은 '미등록'으로 남아 있으므로, 미등록 얼굴이 있는 사진만 다시 큐에 넣는다.
-    전부 다시 돌리지 않는 이유는 사진 1장당 분석 호출이 다시 나가기 때문이다.
+    scope 별로 대상이 다르다. 사진 1장당 분석 호출이 다시 나가므로 기본값은 가장 좁은
+    "failed" 이고, 필요한 범위를 사용자가 고른다.
+
+      failed     분석에 실패한 사진만
+      unmatched  분석은 끝났지만 '미등록' 얼굴이 남은 사진만.
+                 기준 사진을 뒤늦게 등록한 사람이 자기 얼굴을 찾게 하는 용도다.
+      all        앨범의 모든 사진
+
+    사람이 직접 지정한 인물 연결(source=manual)과 제외 표시는 worker 가 보존한다.
+    다만 보정본 승인은 worker 의 apply_result 가 지우므로 재분석하면 초기화된다.
     """
     require_album_member(member, album_id)
-    if not member.reference_indexed or not member.reference_key:
-        raise ApiError(
-            409,
-            "REFERENCE_REQUIRED",
-            "기준 사진을 먼저 등록해야 얼굴을 다시 분류할 수 있습니다.",
-        )
-    photos = list(
-        db.scalars(
-            select(Photo).where(
-                Photo.album_id == album_id,
-                Photo.analysis_status == AnalysisStatus.DONE.value,
-                Photo.unregistered_face_count > 0,
+
+    conditions = [Photo.album_id == album_id]
+    if scope == "failed":
+        conditions.append(Photo.analysis_status == AnalysisStatus.FAILED.value)
+    elif scope == "unmatched":
+        # 비교 대상이 될 기준 얼굴이 없으면 다시 돌려도 결과가 같다.
+        if not member.reference_indexed or not member.reference_key:
+            raise ApiError(
+                409,
+                "REFERENCE_REQUIRED",
+                "기준 사진을 먼저 등록해야 얼굴을 다시 분류할 수 있습니다.",
             )
-        ).all()
-    )
-    for photo in photos:
-        photo.analysis_status = AnalysisStatus.PENDING.value
-        photo.analysis_error = None
-        photo.processing_started_at = None
-        photo.analysis_attempts = 0
-    db.commit()
-    return RematchResult(queued=len(photos))
+        conditions.append(Photo.analysis_status == AnalysisStatus.DONE.value)
+        conditions.append(Photo.unregistered_face_count > 0)
+
+    photo_ids = list(db.scalars(select(Photo.id).where(*conditions)))
+    if photo_ids:
+        edit_ids = select(Edit.id).where(Edit.photo_id.in_(photo_ids))
+        db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
+        db.execute(
+            update(Photo)
+            .where(Photo.id.in_(photo_ids))
+            .values(
+                analysis_status=AnalysisStatus.PENDING.value,
+                analysis_error=None,
+                processing_started_at=None,
+                analysis_attempts=0,
+            )
+        )
+        db.commit()
+
+    rows = db.execute(
+        select(Photo.analysis_status, func.count(Photo.id))
+        .where(Photo.album_id == album_id)
+        .group_by(Photo.analysis_status)
+    ).all()
+    counts = Counter({status: count for status, count in rows})
+    return StatusOut(**{status.value: counts[status.value] for status in AnalysisStatus})
 
 
 @router.get("/albums/{album_id}/status", response_model=StatusOut)

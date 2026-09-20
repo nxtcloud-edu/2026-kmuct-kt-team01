@@ -122,11 +122,6 @@ class StatusOut(BaseModel):
     failed: int
 
 
-class RematchResult(BaseModel):
-    """다시 분류하려고 큐에 넣은 사진 장수."""
-
-    queued: int
-
 
 class CoverageMember(BaseModel):
     member_id: str
