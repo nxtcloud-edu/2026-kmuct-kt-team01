@@ -32,14 +32,14 @@ def session(tmp_path):
     app.state.engine.dispose()
 
 
-def upload(session):
+def upload(session, fmt='PNG', filename=None):
     app, owner, _, album, _ = session
     output = io.BytesIO()
     with Image.new('RGB', (32, 24), '#7c3aed') as image:
-        image.save(output, format='PNG')
+        image.save(output, format=fmt)
     raw = output.getvalue()
     response = owner.post(f"/api/albums/{album['album_id']}/photos",
-                          files=[('files', ('fixture.png', raw, 'image/png'))])
+                          files=[('files', (filename or ('fixture.png' if fmt == 'PNG' else 'fixture.jpg'), raw, 'image/png' if fmt == 'PNG' else 'image/jpeg'))])
     assert response.status_code == 200
     item = response.json()['results'][0]
     assert item['ok']
@@ -73,15 +73,40 @@ def download_final(session, photo_id):
                       json={'photo_ids': [photo_id], 'version': 'final'})
 
 
-def test_uploaded_png_is_downloaded_byte_for_byte(session):
+@pytest.mark.parametrize('fmt', ['PNG', 'JPEG'])
+def test_uploaded_original_is_downloaded_byte_for_byte(session, fmt):
     app, owner, _, _, _ = session
-    photo_id, raw = upload(session)
+    photo_id, raw = upload(session, fmt)
     response = owner.get(f'/api/photos/{photo_id}/download')
     assert response.status_code == 200
-    assert response.content == raw, 'Original download must preserve uploaded PNG bytes'
+    assert response.content == raw, 'Original download must preserve uploaded bytes'
     with app.state.session_factory() as db:
         photo = db.get(Photo, photo_id)
         assert photo.content_hash == hashlib.sha256(response.content).hexdigest()
+        assert photo.byte_size == len(raw)
+        assert photo.mime == ('image/png' if fmt == 'PNG' else 'image/jpeg')
+
+
+@pytest.mark.parametrize('filename', ['fixture.png', '여행사진.png'])
+def test_saved_preview_and_download_share_bytes_and_require_album_session(session, filename):
+    app, owner, _, _, _ = session
+    photo_id, _ = upload(session, filename=filename)
+    mark_analyzed(session, photo_id)
+    edit_id = save(owner, photo_id, 1.2)
+    preview = owner.get(f'/api/edits/{edit_id}/preview')
+    assert preview.status_code == 200
+    with TestClient(app, raise_server_exceptions=False) as client:
+        assert client.get(f'/api/edits/{edit_id}/preview').status_code == 401
+        assert client.get(f'/api/edits/{edit_id}/download').status_code == 401
+        client.post('/api/albums', json={'name': 'other', 'display_name': 'outsider'})
+        assert client.get(f'/api/edits/{edit_id}/preview').status_code == 403
+        assert client.get(f'/api/edits/{edit_id}/download').status_code == 403
+        client.cookies.clear()
+        client.cookies.update(owner.cookies)
+        downloaded = client.get(f'/api/edits/{edit_id}/download')
+        assert downloaded.status_code == 200, downloaded.text
+        assert downloaded.content == preview.content
+        assert 'attachment' in downloaded.headers['content-disposition']
 
 
 def test_no_face_override_agrees_between_approval_and_final_zip(session):

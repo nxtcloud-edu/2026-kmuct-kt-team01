@@ -3,6 +3,21 @@
 현재 단계: **운영 어댑터 연결 검증 진행, 원본 보존 및 최종 ZIP 정책 불일치 수정 요청**.
 전체 역할 완료나 배포 완료가 아니다.
 
+## 최신 수정 재검사
+
+- 실제 후보 `5d4d70b470dbc5cd4b012262b2ef0a52e82bd134`를 새 snapshot으로 검사했다.
+- 후보 기본 테스트 **218 passed**, Starlette/AnyIO 경고 1건. 아래 별도 수락 검사 실패를 포함한 전체 완료 판정은 아니다.
+- #4 원본 보존 수정 확인: PNG/JPEG 업로드와 다운로드 bytes 및 DB SHA/MIME/byte_size 일치. 이 범위 APPLIED.
+- 새 저장 버전 preview/download 경로 확인: 영문 파일명에서 bytes 일치, 비로그인 401/다른 앨범 403 확인.
+- 추가된 한글 파일명 `여행사진.png`의 보정본 다운로드는 500 INTERNAL_ERROR.
+  `api.download_edit`가 Content-Disposition에 한글을 직접 넣어 HTTP 헤더 인코딩을 실패시킨다.
+  ROLE-03에 ASCII fallback과 UTF-8 filename* 인코딩 적용을 요청한다.
+- 이전 no_face 최종 ZIP 409 및 분석 중 수동 인물 수정 UNIQUE 충돌은 아직 재현된다.
+- 확장 수락 검사: `python -m pytest docs/assembly/checks/role5_acceptance.py -q` **4 passed, 3 failed**, 경고 1건.
+  통과 네 사례: PNG 원본, JPEG 원본, 영문 파일 preview/download/권한, 두 세션 취소 fallback/재시작 보존.
+  최신 미리보기/다운로드 코드는 통합 후보에 존재하며 역할 브랜치의 기존 editor를 덮어써서 되돌리지 않는다.
+  실제 브라우저/S3/PostgreSQL 검증은 이 API 검사에 포함하지 않는다.
+
 ## 운영 연결 수락 검사 — 최신
 
 - 실제 검토 ref: assemble/20260920 `cf8f36a36ff5a31e25ee2d83336d0d6b45f4a431`.
@@ -148,7 +163,7 @@
 ## 협업 요청 상태
 
 - [#3 backend-adapters](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3): 운영 연결 READY 수신, 실제 쿠키/SQLAlchemy/로컬 저장 검증. 최종 ZIP 정책 오류로 전체 APPLIED 보류.
-- [#4 preserve-upload-original](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/4): REQUESTED. 업로드 raw 대신 재인코딩 객체가 저장되는 원본 손실 문제.
+- [#4 preserve-upload-original](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/4): APPLIED. 후보 5d4d70b에서 PNG/JPEG 업로드·다운로드 bytes와 DB metadata 일치 확인.
 - [#7 editor-integration](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/7): mount 및 실제 앨범 ID 수정 APPLIED. 서버 미리보기/다운로드 UI와 실제 E2E는 미완료로 열어 둠.
 - #3/#7에 실제 role-5 PR/full SHA/검사 결과를 추가로 전달했다. 상대 작업 완료를 의미하지 않는다.
 - [2번 PR 리뷰](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2#pullrequestreview-5258615747): COMMENTED, 승인 아님.
