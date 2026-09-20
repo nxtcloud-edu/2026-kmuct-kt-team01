@@ -123,8 +123,8 @@ def read_upload(file_object: object) -> bytes:
 def normalize_image(
     data: bytes, mime: str | None
 ) -> tuple[bytes, bytes, int, int, datetime | None, str]:
-    if mime not in ALLOWED_MIME:
-        raise ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "JPEG와 PNG만 업로드할 수 있습니다.")
+    # Browsers vary: some send image/jpg, an empty type, or no type for real JPEGs.
+    # Trust Pillow's decoded format below instead of the declared Content-Type.
     try:
         with Image.open(io.BytesIO(data)) as source:
             source.verify()

@@ -78,10 +78,29 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     assert response.status_code == 200
     results = response.json()["results"]
     assert [item["ok"] for item in results] == [True, False]
-    assert results[1]["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+    assert results[1]["error"]["code"] == "INVALID_IMAGE"
 
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(Photo.id))) == 1
+
+
+def test_upload_accepts_jpeg_with_nonstandard_declared_type(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+
+    response = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[
+            ("files", ("phone.JPG", jpeg_bytes(), "image/jpg")),
+            ("files", ("empty-type.jpeg", jpeg_bytes(), "application/octet-stream")),
+        ],
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [item["ok"] for item in results] == [True, True]
+
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count(Photo.id))) == 2
 
     listing = client.get(f"/api/albums/{album['album_id']}/photos")
     assert listing.status_code == 200
