@@ -1,9 +1,33 @@
 # ROLE-05 작업 상태
 
-현재 단계: **3번 확정 승인 정책 반영 및 통합 후보 호환성 검사 완료, 운영 어댑터 연결 대기**.
+현재 단계: **운영 어댑터 연결 검증 진행, 원본 보존 및 최종 ZIP 정책 불일치 수정 요청**.
 전체 역할 완료나 배포 완료가 아니다.
 
-## 최신 인계 — 2026-09-20
+## 운영 연결 수락 검사 — 최신
+
+- 실제 검토 ref: assemble/20260920 `cf8f36a36ff5a31e25ee2d83336d0d6b45f4a431`.
+  #3 READY 댓글의 full SHA는 로컬 Git ref와 달라 실제 fetch된 위 SHA를 기준으로 검증했다.
+- 원격 후보를 새 임시 폴더에 그대로 추출해 Python3.13/후보 requirements로 검사: **196 passed**, Starlette/AnyIO 경고 1건.
+- ROLE-02 `51599746d2d1cbdba2ac930d312037f514d8357a`: **23 tests passed**, TypeScript/Vite build 통과.
+  App의 생성/참여 ID 전달, PhotoDetail 실제 albumId 사용 및 추가 회귀 검사를 확인했다.
+  #7의 album-demo 고정값 수정은 요청자 확인 완료(APPLIED). 미리보기/다운로드 전체 완료는 아니다.
+- 운영 SQLAlchemy repository, LocalStorage wrapper, 실제 서명 쿠키를 사용하는 추가 수락 검사:
+  `python -m pytest docs/assembly/checks/role5_acceptance.py -q` → **1 passed, 3 failed**.
+  역할 3 코드가 있는 조립본에서 실행한다. 전용 임시 `_test` SQLite/LocalStorage만 사용한다.
+  분석 상태만 합성 fixture로 준비하며 AWS/브라우저 E2E가 아니다.
+- 통과: 두 개의 독립 세션이 두 버전을 전원 승인 → 최신 취소 → 이전 최종본 ZIP → 앱 재생성 후 세션/최종본/ZIP 바이트 보존.
+- 실패 1 (#4): PNG 업로드 후 원본 다운로드가 JPEG로 변경됨. `upload_photos`가 normalized를 원본 키에 저장한다.
+  기존 원본 보존 테스트는 업로드 이후 저장된 바이트만 비교하여 업로드 단계 손실을 검출하지 못한다.
+- 실패 2 (#3): done/no_face 사진에 수동 등장 멤버가 남으면 업로더 승인으로 API는 is_final=true,
+  final ZIP은 409 FINAL_EDIT_NOT_APPROVED. `api.final_edit`는 no_face 우선 정책을 누락했다.
+  승인 집계와 다운로드가 같은 `approval_targets` 규칙을 사용하도록 ROLE-03 소유 API 수정을 요청한다.
+- 실패 3 (#3): worker가 분석 전 읽은 자동 인물 링크를 보유한 동안 실제 API로 같은 인물을 수동 제외하면,
+  분석 결과 반영 시 stale 링크에서 동일 PK를 추가해 UNIQUE 오류가 발생하고 분석 failed가 된다.
+  결과 적용 직전에 사진 잠금을 다시 잡고 최신 member_links를 읽어 수동 수정과 승인 무효화를 같은 트랜잭션으로 보존해야 한다.
+- 운영 adapter 수락은 부분이며 APPLIED로 닫지 않는다. 원본 보존과 위 정책 수정 후 이 수락 검사를 재실행한다.
+  실제 S3 create-only/PostgreSQL 동시성/브라우저 E2E/서버 렌더 미리보기는 계속 미검증 또는 미완료다.
+
+## 이전 정책 인계 — 2026-09-20
 
 - 직전 공개 head: `a9444e15390a2d42d5c41c1c5deab31bc278bd0c`. 이번 후속 커밋의 full SHA는 #3 READY 댓글로 전달한다.
 - 3번 [ACK/정책 결정](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3#issuecomment-5746567388)을 반영했다.
@@ -123,9 +147,9 @@
 
 ## 협업 요청 상태
 
-- [#3 backend-adapters](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3): ACK 수신, 정책 반영 소스 READY. 운영 어댑터/원자적 무효화 연결은 미완료.
+- [#3 backend-adapters](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/3): 운영 연결 READY 수신, 실제 쿠키/SQLAlchemy/로컬 저장 검증. 최종 ZIP 정책 오류로 전체 APPLIED 보류.
 - [#4 preserve-upload-original](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/4): REQUESTED. 업로드 raw 대신 재인코딩 객체가 저장되는 원본 손실 문제.
-- [#7 editor-integration](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/7): 프론트 mount 응답 수신/소스 확인. 실제 앨범 ID 결함 및 서버 미리보기/다운로드 미완료로 열어 둠.
+- [#7 editor-integration](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/7): mount 및 실제 앨범 ID 수정 APPLIED. 서버 미리보기/다운로드 UI와 실제 E2E는 미완료로 열어 둠.
 - #3/#7에 실제 role-5 PR/full SHA/검사 결과를 추가로 전달했다. 상대 작업 완료를 의미하지 않는다.
 - [2번 PR 리뷰](https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2#pullrequestreview-5258615747): COMMENTED, 승인 아님.
   head `5213e685dd6d66f01cc0e707f657f4d0d3fc3e8e`의 API 클라이언트 diff만 검토.
