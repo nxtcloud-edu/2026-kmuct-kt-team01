@@ -55,4 +55,8 @@
 
 ## 요청 상태
 
-- 아래 연동 요청을 Draft PR #2에서 생성한다.
+- `ZZIK:20260920:role-2:api-integration-01` → role-3, REQUESTED
+  - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/6
+- `ZZIK:20260920:role-2:editor-slot-01` → role-5, REQUESTED
+  - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/5
+- PR #2 교차 검토자 `tkdgur3207` 지정 완료
