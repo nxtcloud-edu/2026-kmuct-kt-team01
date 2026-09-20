@@ -222,7 +222,7 @@ def upload_reference(
         message = getattr(exc, "message_ko", str(exc))
         raise ApiError(422, code, message) from exc
 
-    normalized, _, _, _, _ = normalize_image(raw, file.content_type)
+    normalized, _, _, _, _, _ = normalize_image(raw, file.content_type)
     key = f"albums/{member.album_id}/members/{member.id}/reference.jpg"
     storage.put(key, normalized, "image/jpeg")
     member.reference_key = key
@@ -251,12 +251,12 @@ def upload_photos(
         stored_keys: list[str] = []
         try:
             raw = read_upload(upload.file)
-            normalized, thumbnail, width, height, captured_at = normalize_image(
+            _, thumbnail, width, height, captured_at, detected_mime = normalize_image(
                 raw, upload.content_type
             )
             photo_id = str(uuid4())
-            original_key, thumb_key = photo_keys(album_id, photo_id)
-            storage.put(original_key, normalized, "image/jpeg")
+            original_key, thumb_key = photo_keys(album_id, photo_id, detected_mime)
+            storage.put(original_key, raw, detected_mime)
             stored_keys.append(original_key)
             storage.put(thumb_key, thumbnail, "image/jpeg")
             stored_keys.append(thumb_key)
@@ -268,10 +268,10 @@ def upload_photos(
                 s3_key=original_key,
                 thumb_key=thumb_key,
                 content_hash=hashlib.sha256(raw).hexdigest(),
-                mime="image/jpeg",
+                mime=detected_mime,
                 width=width,
                 height=height,
-                byte_size=len(normalized),
+                byte_size=len(raw),
                 captured_at=captured_at,
                 analysis_status=AnalysisStatus.PENDING.value,
             )

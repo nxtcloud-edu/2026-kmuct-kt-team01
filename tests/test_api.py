@@ -19,6 +19,12 @@ def jpeg_bytes() -> bytes:
     return output.getvalue()
 
 
+def png_bytes(width: int = 2600, height: int = 25) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGBA", (width, height), (124, 58, 237, 128)).save(output, format="PNG")
+    return output.getvalue()
+
+
 def make_client(tmp_path) -> tuple[TestClient, object]:
     settings = Settings(
         database_url=f"sqlite+pysqlite:///{tmp_path / 'zzik_test.sqlite'}",
@@ -83,6 +89,33 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     assert listing.json()["items"][0]["analysis_status"] == "pending"
     assert listing.json()["items"][0]["provider"] is None
     assert listing.json()["items"][0]["mode"] is None
+
+
+def test_upload_preserves_png_original_bytes_and_metadata_across_restart(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    original = png_bytes()
+
+    uploaded = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("wide.png", original, "image/png"))],
+    ).json()["results"][0]["photo"]
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, uploaded["id"])
+        assert photo.mime == "image/png"
+        assert (photo.width, photo.height, photo.byte_size) == (2600, 25, len(original))
+        assert photo.s3_key.endswith("/original.png")
+        assert app.state.storage.get(photo.s3_key) == original
+        assert app.state.storage.get(photo.thumb_key) != original
+
+    restarted = TestClient(create_app(app.state.settings))
+    restarted.cookies.update(client.cookies)
+    downloaded = restarted.get(f"/api/photos/{uploaded['id']}/download")
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"] == "image/png"
+    assert downloaded.content == original
+    assert hashlib.sha256(downloaded.content).hexdigest() == hashlib.sha256(original).hexdigest()
 
 
 def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
