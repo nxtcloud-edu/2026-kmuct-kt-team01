@@ -43,7 +43,7 @@
 | 인증 실패를 mock 성공으로 바꾸지 않음 | 완료·검증 |
 | mock 모드(해시 시드, manifest, mode='mock', synthetic 표시) | 완료·검증 |
 | EXIF 촬영시각·GPS, 없으면 null (추측 안 함) | 완료·검증 |
-| 연사 그룹화 `group_bursts` | 완료·검증 (단, worker 는 자체 `recompute_bursts` 를 쓴다 — 아래 참고) |
+| 연사 그룹화 | **제거함.** 이슈 #16 결정에 따라 `worker.recompute_bursts`(3번)를 정식으로 두고 내 `group_bursts` 를 지웠다 |
 | **3번 worker ORM members 수용 + `load_reference` 훅** | 완료·검증 |
 | Bedrock 여행 요약 (8-a) | **부분** — 가짜 클라이언트 검증 완료, 실제 Bedrock 호출 **미검증** |
 | 자연어 검색 구조화 (8-b) | 완료 — 규칙 파서 검증 완료, bedrock 경로는 가짜 클라이언트만 |
@@ -55,7 +55,7 @@
 
 ```
 .venv/Scripts/python -m pytest tests -q
-157 passed, 1 warning in 15.30s    # 2026-09-20, Python 3.13.5, Windows
+152 passed, 1 warning in 7.34s    # 2026-09-20, Python 3.13.5, Windows
 ```
 
 저장소 전체 테스트다. 3번의 `test_api.py` / `test_worker.py` / `test_models.py` /
@@ -75,12 +75,13 @@
   재분석 시 수동 지정·제외 보존, no_face 와 failed 분리, captured_at NULL 유지,
   worker 중단 동작, 기준 셀카 실패 경로(422 NO_FACE / MULTIPLE_FACES)
 
-## 발견 사항 (3번에게 보고, 내가 고치지 않음)
+## 발견 사항 (보고 → 3번이 수정 완료)
 
-`worker.claim_one` 은 `analysis_status == 'pending'` 인 사진만 집는다. 그래서
-claim 직후 worker 가 죽으면 그 사진은 **`processing` 에 영구히 갇힌다.** 어떤 worker 도
-다시 집지 않고 분석 현황 화면에 계속 "처리 중"으로 남으며, 사람이 재분석을 눌러야 풀린다.
-`worker.py` 는 3번 소유라 고치지 않고 현재 동작을 테스트로 고정한 뒤 이슈로 올렸다.
+`worker.claim_one` 이 `pending` 만 집어서, claim 직후 worker 가 죽으면 사진이
+`processing` 에 영구히 갇혔다. `worker.py` 는 3번 소유라 고치지 않고 현재 동작을
+테스트로 고정한 뒤 #17 로 올렸다. 3번이 `a34699f` 로 리스 방식(5분 경과 시 회수,
+최대 3회 후 failed)을 넣어 고쳤고, assemble 브랜치에서 162 passed 로 확인했다.
+내 테스트는 3번이 회수 동작 검사로 바꿨다.
 
 DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건드리지 않았다.
 샘플 이미지는 Pillow 로 그 자리에서 만든 합성 이미지이고 저장소에 실사진이 없다.
@@ -108,7 +109,8 @@ DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건�
 | 기준 셀카 로딩 경로 | **해결됨.** 3번이 `worker.analysis_members(members, storage)` 로 ORM Member 를 `reference_bytes`/`reference_s3` dict 로 바꿔 넘긴다. 내 `load_reference` 훅은 대안으로만 남긴다 |
 | `requirements.txt` 의 `anthropic[bedrock]` | **해결됨.** 3번이 `anthropic[bedrock]==1.7.0` 추가 |
 | `tests/test_api.py` | **해결됨.** 3번이 직접 `test_reference_endpoint_uses_role_four_mock_and_stores_reference` 로 고쳤다. 충돌을 없애려고 내 버전을 버리고 3번 것을 그대로 채택했다 |
-| 연사 그룹화 중복 | **열려 있음.** `worker.recompute_bursts` 와 내 `quality.group_bursts` 가 같은 일을 한다. 3번 것이 DB 에 붙어 동작하므로 그대로 두고 내 함수는 남겨만 뒀다. 정리 여부는 3번이 정한다 |
+| 연사 그룹화 중복 (#16) | **해결됨.** 3번이 `cf8f36a` 로 내 `group_bursts` 를 제거해 worker 쪽을 정식으로 정했다. 내 브랜치도 같은 내용으로 맞췄다 |
+| worker 중단 시 processing 고착 (#17) | **해결됨.** 3번이 `a34699f` 로 `processing_started_at` + `analysis_attempts` 리스(5분, 최대 3회)를 넣어 회수하게 고쳤다. assemble 에서 162 passed 로 확인했다 |
 
 `assemble/20260920` 에 아직 안 들어간 내 커밋: `61ffc18`, `d13ef63`, `0bf49e7`, `70b29cb`, 그 이후.
 
