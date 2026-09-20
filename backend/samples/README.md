@@ -38,11 +38,14 @@ python -m backend.app.samples remove <sha256>
 
 ## 현재 등록된 이미지의 출처
 
-**없음.** 2026-09-20 기준 `samples` 는 비어 있다. 즉 지금은 **모든 사진이
-`mock_source="synthetic"`** 으로 처리되고, 얼굴마다 `synthetic: true` 가 붙는다.
+2026-09-20 기준 `samples` 에 21건 등록되어 있다. `scripts/seed_kirothon_manifest.py` (팀
+자체 데모용) 로 KIROTHON 해커톤 현장에서 팀원이 직접 촬영한 사진을 등록했다 — 출처·사용
+허락은 각 manifest 항목에 동일하게 `source="2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀)
+현장에서 팀원이 직접 촬영"`, `license="촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체
+데모 시연용)"` 로 남아 있다.
 
-저장소에 사람 얼굴 사진을 커밋하지 않았다. 테스트는 Pillow로 그 자리에서 만드는 합성 이미지
-(단색)만 쓰므로 초상권·라이선스 문제가 없다.
+저장소에는 사진 파일 자체를 커밋하지 않았다(해시·설명만). 테스트는 여전히 Pillow로 그
+자리에서 만드는 합성 이미지(단색)만 쓴다.
 
 출처 기록은 이 파일의 표가 아니라 **manifest 항목 자체**(`source`, `license` 필드)에 남는다.
 `python -m backend.app.samples list` 로 언제든 확인할 수 있다. 등록 도구가 두 값을 필수로

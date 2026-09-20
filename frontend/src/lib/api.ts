@@ -213,6 +213,7 @@ function makePhotos(): Photo[] {
       quality: { sharpness: 82 + (index % 14), brightness: 72 + (index % 18), eyes_open_ratio: group ? .86 + (index % 3) * .05 : .98 },
       best_score: 72 + (index % 6) * 5,
       is_best: index % 4 === 0,
+      burst_group_id: index < 2 ? 'burst-demo-a' : index >= 4 && index < 7 ? 'burst-demo-b' : null,
       members: linked.map((member, memberIndex) => ({
         member_id: member.id, display_name: member.display_name,
         similarity: 94.2 - memberIndex * 3.1, source: 'auto', excluded: false,
