@@ -35,6 +35,7 @@ def create_album(client: TestClient, name: str = "부산 여행") -> dict[str, s
         "/api/albums", json={"name": name, "display_name": "민지"}
     )
     assert response.status_code == 201
+    assert response.json()["member_id"]
     return response.json()
 
 
@@ -93,6 +94,7 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
         json={"invite_code": album["invite_code"], "display_name": "서준"},
     )
     assert joined.status_code == 200
+    assert joined.json()["member_id"]
 
     album_view = owner.get(f"/api/albums/{album['album_id']}").json()
     owner_id, invitee_id = [item["id"] for item in album_view["members"]]

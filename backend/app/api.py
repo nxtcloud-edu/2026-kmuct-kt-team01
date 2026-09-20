@@ -150,7 +150,9 @@ def create_album(
     db.add_all([album, member])
     db.commit()
     set_session_cookie(request, response, member.id)
-    return AlbumCreated(album_id=album.id, invite_code=album.invite_code)
+    return AlbumCreated(
+        album_id=album.id, invite_code=album.invite_code, member_id=member.id
+    )
 
 
 @router.post("/albums/join", response_model=AlbumCreated)
@@ -167,7 +169,9 @@ def join_album(
     db.add(member)
     db.commit()
     set_session_cookie(request, response, member.id)
-    return AlbumCreated(album_id=album.id, invite_code=album.invite_code)
+    return AlbumCreated(
+        album_id=album.id, invite_code=album.invite_code, member_id=member.id
+    )
 
 
 @router.get("/albums/{album_id}", response_model=AlbumOut)

@@ -23,6 +23,7 @@ class AlbumJoin(BaseModel):
 class AlbumCreated(BaseModel):
     album_id: str
     invite_code: str
+    member_id: str
 
 
 class MemberOut(ORMModel):
