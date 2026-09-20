@@ -7,10 +7,10 @@ After=network-online.target
 Type=simple
 User=zzik
 Group=zzik
-WorkingDirectory=/opt/zzik/current/backend
+WorkingDirectory=/opt/zzik/current
 EnvironmentFile=/etc/zzik/runtime.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/zzik/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+ExecStart=/opt/zzik/venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
