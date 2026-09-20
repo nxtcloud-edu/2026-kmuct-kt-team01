@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from sqlalchemy import delete, select
@@ -18,7 +18,7 @@ from backend.app.models import (
     Photo,
     PhotoMember,
 )
-from backend.app.storage import make_storage
+from backend.app.storage import S3Storage, Storage, make_storage
 
 logger = logging.getLogger("zzik.worker")
 
@@ -61,6 +61,40 @@ def run_analysis_with_retries(photo: Photo, image_bytes: bytes, members: list[Me
     raise AssertionError("unreachable")
 
 
+def analysis_members(members: list[Member], storage: Storage) -> list[dict]:
+    payloads: list[dict] = []
+    for member in members:
+        if not member.reference_indexed or not member.reference_key:
+            continue
+        payload: dict = {"id": member.id}
+        if isinstance(storage, S3Storage):
+            payload["reference_s3"] = {
+                "bucket": storage.bucket,
+                "key": member.reference_key,
+            }
+        else:
+            payload["reference_bytes"] = storage.get(member.reference_key)
+        payloads.append(payload)
+    return payloads
+
+
+def parse_captured_at(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def comparable_time(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def apply_result(db: Session, photo: Photo, result: dict) -> None:
     preserved = {
         link.member_id: link
@@ -75,6 +109,8 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
         )
     )
     for face in result.get("faces", []):
+        if face.get("status") != "matched":
+            continue
         member_id = face.get("member_id")
         if not member_id or member_id in preserved:
             continue
@@ -94,6 +130,8 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
     photo.best_score = result.get("best_score")
     photo.provider = result.get("provider")
     photo.mode = result.get("mode")
+    photo.captured_at = parse_captured_at((result.get("capture") or {}).get("captured_at"))
+    photo.is_best = True
     photo.analysis_status = AnalysisStatus.DONE.value
     photo.analysis_error = None
 
@@ -113,10 +151,15 @@ def recompute_bursts(db: Session, album_id: str, shot_type: str) -> None:
     )
     for photo in photos:
         photo.burst_group_id = None
-        photo.is_best = False
+        photo.is_best = True
     clusters: list[list[Photo]] = []
     for photo in photos:
-        if not clusters or photo.captured_at - clusters[-1][-1].captured_at > timedelta(seconds=3):
+        if (
+            not clusters
+            or comparable_time(photo.captured_at)
+            - comparable_time(clusters[-1][-1].captured_at)
+            > timedelta(seconds=3)
+        ):
             clusters.append([photo])
         else:
             clusters[-1].append(photo)
@@ -126,6 +169,7 @@ def recompute_bursts(db: Session, album_id: str, shot_type: str) -> None:
         group_id = str(uuid4())
         for photo in cluster:
             photo.burst_group_id = group_id
+            photo.is_best = False
         best = max(
             cluster,
             key=lambda item: (
@@ -154,7 +198,9 @@ def process_one(session_factory, storage) -> bool:
         members = list(db.scalars(select(Member).where(Member.album_id == photo.album_id)).all())
         try:
             image_bytes = storage.get(photo.s3_key)
-            result = run_analysis_with_retries(photo, image_bytes, members)
+            result = run_analysis_with_retries(
+                photo, image_bytes, analysis_members(members, storage)
+            )
             apply_result(db, photo, result)
             db.flush()
             recompute_bursts(db, photo.album_id, photo.shot_type)
@@ -163,9 +209,9 @@ def process_one(session_factory, storage) -> bool:
             db.rollback()
             photo = db.get(Photo, photo_id)
             if photo is not None:
-                code, message, _ = error_fields(exc)
+                code, _, _ = error_fields(exc)
                 photo.analysis_status = AnalysisStatus.FAILED.value
-                photo.analysis_error = f"{code}: {message}"[:1000]
+                photo.analysis_error = code[:1000]
                 db.commit()
             logger.exception("photo analysis failed", extra={"photo_id": photo_id})
     return True

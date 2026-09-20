@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from backend.app.analysis import AnalysisError
 from backend.app.models import Member, Photo, PhotoMember
 from backend.app.worker import process_one
 from tests.test_api import create_album, jpeg_bytes, make_client
@@ -40,6 +41,7 @@ def test_worker_preserves_manual_links_and_marks_mock_mode(tmp_path, monkeypatch
             "best_score": 80.0,
             "provider": "contract-fixture",
             "mode": "mock",
+            "capture": {"captured_at": None},
         },
     )
     assert process_one(app.state.session_factory, app.state.storage) is True
@@ -71,10 +73,15 @@ def test_worker_groups_only_photos_with_capture_time(tmp_path, monkeypatch) -> N
         db.get(Photo, ids[1]).captured_at = now + timedelta(seconds=2)
         db.commit()
 
-    scores = iter([70.0, 90.0])
+    results = iter(
+        [
+            (70.0, now.isoformat()),
+            (90.0, (now + timedelta(seconds=2)).isoformat()),
+        ]
+    )
 
     def fake_analyze(*_):
-        score = next(scores)
+        score, captured_at = next(results)
         return {
             "faces": [],
             "face_count": 2,
@@ -84,6 +91,7 @@ def test_worker_groups_only_photos_with_capture_time(tmp_path, monkeypatch) -> N
             "best_score": score,
             "provider": "contract-fixture",
             "mode": "mock",
+            "capture": {"captured_at": captured_at},
         }
 
     monkeypatch.setattr("backend.app.worker.analyze", fake_analyze)
@@ -94,3 +102,53 @@ def test_worker_groups_only_photos_with_capture_time(tmp_path, monkeypatch) -> N
         assert photos[0].burst_group_id == photos[1].burst_group_id
         assert photos[0].burst_group_id is not None
         assert [photo.is_best for photo in photos] == [False, True]
+
+
+def test_real_mock_analysis_runs_through_api_storage_and_worker(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    reference = client.post(
+        "/api/members/me/reference",
+        files={"file": ("selfie.jpg", jpeg_bytes(), "image/jpeg")},
+    )
+    assert reference.status_code == 200
+
+    uploaded = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("trip.jpg", jpeg_bytes(), "image/jpeg"))],
+    ).json()
+    photo_id = uploaded["results"][0]["photo"]["id"]
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    detail = client.get(f"/api/photos/{photo_id}")
+    assert detail.status_code == 200
+    assert detail.json()["analysis_status"] == "done"
+    assert detail.json()["provider"] == "mock"
+    assert detail.json()["mode"] == "mock"
+    assert detail.json()["is_best"] is True
+    status = client.get(f"/api/albums/{album['album_id']}/status").json()
+    assert status == {"pending": 0, "processing": 0, "done": 1, "failed": 0}
+
+
+def test_worker_retries_only_retryable_errors_and_stores_final_code(tmp_path, monkeypatch) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("retry.jpg", jpeg_bytes(), "image/jpeg"))],
+    )
+    attempts = 0
+
+    def unavailable(*_):
+        nonlocal attempts
+        attempts += 1
+        raise AnalysisError("AWS_UNAVAILABLE", "temporary detail", retryable=True)
+
+    monkeypatch.setattr("backend.app.worker.analyze", unavailable)
+    monkeypatch.setattr("backend.app.worker.time.sleep", lambda _: None)
+    assert process_one(app.state.session_factory, app.state.storage) is True
+    with app.state.session_factory() as db:
+        photo = db.scalar(select(Photo).where(Photo.album_id == album["album_id"]))
+        assert attempts == 3
+        assert photo.analysis_status == "failed"
+        assert photo.analysis_error == "AWS_UNAVAILABLE"
