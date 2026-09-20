@@ -7,3 +7,10 @@
 .invite-code__status { max-width: 300px; margin: 6px 0 0; color: #284c91; font-size: 12px; line-height: 1.5; }
 .invite-code__status:empty { margin: 0; }
 @media (max-width: 360px) { .invite-code { padding: 8px; } .invite-code__controls { gap: 6px; } .invite-code__controls input { width: 128px; } }
+.invite-code-copy { position: relative; display: inline-flex; align-items: center; }
+.invite-code-copy > button { width: 25px; height: 25px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+.invite-code-copy > button:hover:not(:disabled) { background: var(--blue-pale); }
+.invite-code-copy > button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.invite-code-copy > button:disabled { opacity: .55; cursor: wait; }
+.invite-code-copy svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+.invite-code-copy__status { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

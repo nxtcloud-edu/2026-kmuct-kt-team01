@@ -42,7 +42,8 @@ describe('runtime album identifiers', () => {
 
     render(<Gallery client={client} albumId="album-real" currentMemberId="member-real" onOpen={() => {}} onCoverage={() => {}} />)
     await waitFor(() => expect(client.listPhotos).toHaveBeenCalledWith('album-real', expect.objectContaining({ member_ids: [] })))
-    expect(screen.getByLabelText('앨범 초대 코드')).toHaveValue('BUSAN1')
+    expect(screen.getByText(/SHARED ALBUM · BUSAN1/)).toBeTruthy()
+    expect(screen.queryByLabelText('앨범 초대 코드')).toBeNull()
     expect(screen.getByRole('button', { name: '초대코드 복사' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('tab', { name: '내 사진' }))

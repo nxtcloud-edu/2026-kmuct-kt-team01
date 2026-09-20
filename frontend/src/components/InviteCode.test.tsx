@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { InviteCode } from './InviteCode'
+import { InviteCode, InviteCodeCopyButton } from './InviteCode'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -40,6 +40,21 @@ it('uses the synchronous selection fallback directly on an HTTP page', async () 
   expect(writeText).not.toHaveBeenCalled()
   expect(execCommand).toHaveBeenCalledWith('copy')
   expect(screen.getByLabelText('앨범 초대 코드')).toHaveFocus()
+})
+
+it('copies from the icon without rendering a second visible invite code', async () => {
+  const execCommand = vi.fn().mockReturnValue(true)
+  vi.stubGlobal('isSecureContext', false)
+  vi.stubGlobal('navigator', {})
+  Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+  render(<InviteCodeCopyButton code="aB9_xY-2" />)
+
+  fireEvent.click(screen.getByRole('button', { name: '초대코드 복사' }))
+
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('복사했어요'))
+  expect(execCommand).toHaveBeenCalledWith('copy')
+  expect(screen.queryByLabelText('앨범 초대 코드')).toBeNull()
+  expect(document.querySelector('textarea')).toBeNull()
 })
 
 it('keeps the code selected for manual copying when automatic copying fails', async () => {
