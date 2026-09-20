@@ -1,0 +1,24 @@
+[Unit]
+Description=ZZIK analysis worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=zzik
+Group=zzik
+WorkingDirectory=/opt/zzik/current/backend
+EnvironmentFile=/etc/zzik/runtime.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/zzik/venv/bin/python -m app.worker
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
