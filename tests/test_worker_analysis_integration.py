@@ -121,3 +121,103 @@ def test_queue_drains_and_reports_empty(tmp_path) -> None:
     assert status["processing"] == 0
     assert status["failed"] == 0
     assert status["done"] == 2
+
+
+# --------------------------------------------------------------------------
+# 재시도 — worker 는 AnalysisError.retryable 만 보고 판단해야 한다
+# --------------------------------------------------------------------------
+class CountingRekognition:
+    """호출 횟수를 세는 가짜 Rekognition. 지정한 예외를 계속 던진다."""
+
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def detect_faces(self, **_kwargs):
+        self.calls += 1
+        raise self.error
+
+    def compare_faces(self, **_kwargs):  # pragma: no cover - 여기까지 오지 않는다
+        raise AssertionError("DetectFaces 가 실패하면 CompareFaces 를 부르면 안 된다")
+
+    def detect_labels(self, **_kwargs):  # pragma: no cover
+        raise AssertionError("DetectFaces 가 실패하면 DetectLabels 를 부르면 안 된다")
+
+
+def use_rekognition(monkeypatch, client_obj) -> None:
+    monkeypatch.setenv("FACE_PROVIDER", "rekognition")
+    monkeypatch.setattr(
+        "backend.app.analysis._rekognition_client", lambda region: client_obj
+    )
+    # 재시도 대기(2초, 4초)를 실제로 자지 않는다
+    monkeypatch.setattr("backend.app.worker.time.sleep", lambda _seconds: None)
+
+
+def aws_error(code: str):
+    from botocore.exceptions import ClientError
+
+    return ClientError({"Error": {"Code": code, "Message": "raw aws detail"}}, "DetectFaces")
+
+
+def test_throttling_is_retried_three_times_then_marked_failed(tmp_path, monkeypatch) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    fake = CountingRekognition(aws_error("ThrottlingException"))
+    use_rekognition(monkeypatch, fake)
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    assert fake.calls == 3, "retryable 오류는 3번까지 시도해야 한다"
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "failed"
+        assert photo.analysis_error.startswith("AWS_THROTTLED")
+
+
+def test_auth_failure_is_not_retried(tmp_path, monkeypatch) -> None:
+    """권한 오류를 반복 호출하면 요금만 나가고 절대 성공하지 않는다."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    fake = CountingRekognition(aws_error("AccessDeniedException"))
+    use_rekognition(monkeypatch, fake)
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    assert fake.calls == 1, "AWS_AUTH 는 재시도하면 안 된다"
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "failed"
+        assert photo.analysis_error.startswith("AWS_AUTH")
+
+
+def test_stored_error_does_not_leak_raw_aws_message(tmp_path, monkeypatch) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    use_rekognition(monkeypatch, CountingRekognition(aws_error("UnrecognizedClientException")))
+
+    assert process_one(app.state.session_factory, app.state.storage) is True
+
+    with app.state.session_factory() as db:
+        stored = db.get(Photo, photo_id).analysis_error
+    assert "raw aws detail" not in stored
+    assert "AWS 분석 권한을 확인해 주세요" in stored
+
+
+def test_auth_failure_never_becomes_a_mock_success(tmp_path, monkeypatch) -> None:
+    """인증 실패를 mock 성공으로 바꾸지 않는다. 자동 폴백 금지."""
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    photo_id = upload_one(client, album["album_id"])
+    use_rekognition(monkeypatch, CountingRekognition(aws_error("AccessDeniedException")))
+
+    process_one(app.state.session_factory, app.state.storage)
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert photo.analysis_status == "failed"
+        assert photo.provider is None
+        assert photo.mode is None
+        assert photo.face_count == 0
