@@ -10,7 +10,7 @@ afterEach(() => { cleanup(); window.sessionStorage.clear() })
 
 describe('App refresh recovery', () => {
   it('restores the active album after a browser refresh', async () => {
-    window.sessionStorage.setItem('zzik.activeAlbum', JSON.stringify(activeAlbum))
+    window.sessionStorage.setItem('zzik.activeAlbum.mock', JSON.stringify(activeAlbum))
 
     render(<App />)
 
@@ -20,7 +20,7 @@ describe('App refresh recovery', () => {
   })
 
   it('ignores malformed saved navigation state', async () => {
-    window.sessionStorage.setItem('zzik.activeAlbum', '{bad json')
+    window.sessionStorage.setItem('zzik.activeAlbum.mock', '{bad json')
 
     expect(loadActiveAlbum()).toBeNull()
     render(<App />)
