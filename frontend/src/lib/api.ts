@@ -304,7 +304,7 @@ export class MockApiClient implements ApiClient {
 
   async rematchFaces(): Promise<{ queued: number }> {
     await delay()
-    return { queued: this.photos.filter((photo) => photo.unregistered_face_count > 0).length }
+    return { queued: this.photos.filter((photo) => (photo.unregistered_face_count ?? 0) > 0).length }
   }
 
   async getCoverage(): Promise<Coverage> {
