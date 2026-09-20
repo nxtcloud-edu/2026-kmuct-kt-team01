@@ -8,19 +8,29 @@ import { PhotoDetail } from './PhotoDetail'
 afterEach(() => cleanup())
 
 describe('runtime album identifiers', () => {
+  it('retains the new album invitation for immediate sharing', async () => {
+    const createAlbum = vi.fn().mockResolvedValue({ album_id: 'album-real', member_id: 'owner', invite_code: 'aB9_xY-2' })
+    const onComplete = vi.fn()
+    render(<Landing client={{ createAlbum } as unknown as ApiClient} onComplete={onComplete} onPreview={() => {}} />)
+    fireEvent.click(screen.getByRole('tab', { name: '새 앨범' }))
+    fireEvent.change(screen.getByLabelText('앨범 이름'), { target: { value: '여행' } })
+    fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
+    fireEvent.click(screen.getByRole('button', { name: /앨범 만들기/ }))
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ albumId: 'album-real', memberId: 'owner', displayName: '민지', inviteCode: 'aB9_xY-2' }))
+  })
   it('passes the joined album and member IDs into the app flow', async () => {
     const joinAlbum = vi.fn().mockResolvedValue({ album_id: 'album-real', member_id: 'member-real' })
     const onComplete = vi.fn()
     render(<Landing client={{ joinAlbum } as unknown as ApiClient} onComplete={onComplete} onPreview={() => {}} />)
 
-    fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: 'trip26' } })
+    fireEvent.change(screen.getByLabelText('초대 코드'), { target: { value: '  aB9_xY-2  ' } })
     fireEvent.change(screen.getByLabelText('내 이름'), { target: { value: '민지' } })
     fireEvent.click(screen.getByRole('button', { name: /앨범 들어가기/ }))
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith({
       albumId: 'album-real', memberId: 'member-real', displayName: '민지',
     }))
-    expect(joinAlbum).toHaveBeenCalledWith('TRIP26', '민지')
+    expect(joinAlbum).toHaveBeenCalledWith('aB9_xY-2', '민지')
   })
 
   it('uses runtime IDs for album requests and the mine filter', async () => {
@@ -32,6 +42,8 @@ describe('runtime album identifiers', () => {
 
     render(<Gallery client={client} albumId="album-real" currentMemberId="member-real" onOpen={() => {}} onCoverage={() => {}} />)
     await waitFor(() => expect(client.listPhotos).toHaveBeenCalledWith('album-real', expect.objectContaining({ member_ids: [] })))
+    expect(screen.getByLabelText('앨범 초대 코드')).toHaveValue('BUSAN1')
+    expect(screen.getByRole('button', { name: '초대코드 복사' })).toBeEnabled()
 
     fireEvent.click(screen.getByRole('tab', { name: '내 사진' }))
     await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ member_ids: ['member-real'] })))

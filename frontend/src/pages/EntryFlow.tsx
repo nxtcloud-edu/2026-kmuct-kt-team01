@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ApiClient } from '../lib/api'
 import { ApiError, type ActiveAlbum } from '../lib/types'
 import { ArrowIcon, CameraIcon, CheckIcon, SparkleIcon, UsersIcon } from '../components/icons'
+import { InviteCode } from '../components/InviteCode'
 
 export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum) => void; onPreview: () => void }) {
   const [form, setForm] = useState<'join' | 'create'>('join')
@@ -22,9 +23,10 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
     try {
       const displayName = name.trim()
       const result = form === 'join'
-        ? await client.joinAlbum(inviteCode.trim().toUpperCase(), displayName)
+        ? await client.joinAlbum(inviteCode.trim(), displayName)
         : await client.createAlbum(albumName.trim(), displayName)
-      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName })
+      const code = 'invite_code' in result && typeof result.invite_code === 'string' ? result.invite_code : undefined
+      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName, ...(code ? { inviteCode: code } : {}) })
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '요청을 처리하지 못했어요.')
     } finally {
@@ -47,7 +49,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
         </div>
         <form onSubmit={submit}>
           <div className="form-heading"><span className="camera-mark"><CameraIcon /></span><div><h2>{form === 'join' ? '초대받은 앨범이 있나요?' : '새로운 여행을 시작할까요?'}</h2><p>{form === 'join' ? '친구에게 받은 초대 코드를 입력하세요.' : '여행 이름과 내 이름만 있으면 준비 끝!'}</p></div></div>
-          {form === 'join' ? <label>초대 코드<input value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} placeholder="예: JEJU26" /></label> : <label>앨범 이름<input value={albumName} onChange={(event) => setAlbumName(event.target.value)} placeholder="예: 우리들의 제주" /></label>}
+          {form === 'join' ? <label>초대 코드<input aria-label="초대 코드" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="받은 코드를 그대로 붙여넣으세요" /><small>대소문자를 구분해요.</small></label> : <label>앨범 이름<input value={albumName} onChange={(event) => setAlbumName(event.target.value)} placeholder="예: 우리들의 제주" /></label>}
           <label>내 이름<input value={name} onChange={(event) => setName(event.target.value)} placeholder="앨범에 표시될 이름" /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button primary full" disabled={loading}>{loading ? '잠시만요…' : form === 'join' ? '앨범 들어가기' : '앨범 만들기'}<ArrowIcon /></button>
@@ -59,7 +61,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
   )
 }
 
-export function ReferenceRegistration({ client, onDone }: { client: ApiClient; onDone: () => void }) {
+export function ReferenceRegistration({ client, onDone, inviteCode }: { client: ApiClient; onDone: () => void; inviteCode?: string }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -84,6 +86,7 @@ export function ReferenceRegistration({ client, onDone }: { client: ApiClient; o
 
   return (
     <main className="onboarding page-shell">
+      {inviteCode && <InviteCode code={inviteCode} />}
       <div className="stepper"><span className="done"><CheckIcon /></span><i /><span className="active">2</span><i /><span>3</span></div>
       <div className="onboarding-heading"><span className="eyebrow">JUST ONE SELFIE</span><h1>내 사진을 찾아드릴게요</h1><p>혼자 나온 정면 사진 한 장이면 충분해요.<br />찍이 앨범 속 내 사진만 모아 보여줄게요.</p></div>
       <div className="reference-layout">
