@@ -30,7 +30,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(65, 105, 225
 .logo { min-height: 44px; display: flex; align-items: center; gap: 7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
 .logo-mark { width: 42px; height: 42px; position: relative; display: block; flex: none; color: var(--coral); filter: drop-shadow(0 6px 8px rgba(255,115,95,.25)); transition: transform .2s ease, filter .2s ease; }
 .logo-mark > svg { width: 100%; height: 100%; display: block; overflow: visible; }
-.logo-glyph { position: absolute; left: 45%; top: 61%; transform: translate(-50%, -50%); color: white; font-size: 12px; font-weight: 800; line-height: 1; text-shadow: 0 1px 1px rgba(106,57,52,.18); }
+.logo-glyph { position: absolute; left: 40%; top: 63%; transform: translate(-50%, -50%); color: white; font-size: 12px; font-weight: 800; line-height: 1; text-shadow: 0 1px 1px rgba(106,57,52,.18); }
 .logo:hover .logo-mark { transform: translateY(-1px); filter: drop-shadow(0 8px 10px rgba(255,115,95,.3)); }
 .logo b { font: 700 20px/1 'DM Sans', sans-serif; letter-spacing: .08em; }
 .sample-badge { padding: 5px 10px; border-radius: 999px; background: #fff6d7; color: #8c6a00; font-size: 11px; font-weight: 700; }
