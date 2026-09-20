@@ -26,6 +26,11 @@ export interface PhotoMember {
   excluded: boolean
 }
 
+export interface MemberChange {
+  member_id: string
+  excluded: boolean
+}
+
 export interface PhotoQuality {
   sharpness?: number
   brightness?: number
@@ -68,6 +73,17 @@ export interface PageResult<T> {
   page_size: number
   total: number
   total_pages: number
+}
+
+export interface UploadResult {
+  filename: string
+  ok: boolean
+  photo: Photo | null
+  error: ApiErrorBody | null
+}
+
+export interface UploadBatchResponse {
+  results: UploadResult[]
 }
 
 export interface AnalysisCounts {

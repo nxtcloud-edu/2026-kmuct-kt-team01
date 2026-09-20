@@ -20,7 +20,7 @@ export function PhotoDetail({ client, photoId, onBack }: { client: ApiClient; ph
     catch (caught) { setError(caught) }
   }, [client, photoId])
   useEffect(() => { void load() }, [load])
-  async function saveMembers() { try { setPhoto(await client.updatePhotoMembers(photoId, memberIds)); setEditingPeople(false) } catch (caught) { setError(caught) } }
+  async function saveMembers() { try { setPhoto(await client.updatePhotoMembers(photoId, album?.members.map((member) => ({ member_id: member.id, excluded: !memberIds.includes(member.id) })) ?? [])); setEditingPeople(false) } catch (caught) { setError(caught) } }
   async function reanalyze() { try { await client.reanalyzePhoto(photoId); await load() } catch (caught) { setError(caught) } }
   if (error) return <main className="page-shell detail-state"><ErrorState error={error} onRetry={() => void load()} /><button className="preview-link" onClick={onBack}>앨범으로 돌아가기</button></main>
   if (!photo || !album) return <main className="page-shell detail-state"><Spinner label="사진을 불러오는 중" /></main>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ApiClient } from '../lib/api'
-import type { Album, AnalysisCounts, Photo, PhotoFilters } from '../lib/types'
+import type { Album, AnalysisCounts, Photo, PhotoFilters, UploadBatchResponse } from '../lib/types'
 import { EmptyState, ErrorState, Spinner } from '../components/AsyncState'
 import { CheckIcon, DownloadIcon, SparkleIcon, UploadIcon } from '../components/icons'
 
@@ -34,6 +34,7 @@ export function Gallery({ client, onOpen, onCoverage }: { client: ApiClient; onO
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadReport, setUploadReport] = useState<UploadBatchResponse | null>(null)
 
   const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...memberIds])] : memberIds, shot_type: tab === 'group' ? 'group' : undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberIds, tag])
   const load = useCallback(async () => {
@@ -47,11 +48,12 @@ export function Gallery({ client, onOpen, onCoverage }: { client: ApiClient; onO
 
   function changeTab(next: GalleryTab) { setTab(next); setPage(1); setSelected([]) }
   function toggleMember(id: string) { setMemberIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); setPage(1) }
-  async function upload(files: FileList | null) { if (!files?.length) return; setUploading(true); try { await client.uploadPhotos(albumId, Array.from(files)); await load() } catch (caught) { setError(caught) } finally { setUploading(false) } }
+  async function upload(files: FileList | null) { if (!files?.length) return; setUploading(true); setUploadReport(null); try { setUploadReport(await client.uploadPhotos(albumId, Array.from(files))); await load() } catch (caught) { setError(caught) } finally { setUploading(false) } }
   async function downloadSelected() { try { await client.downloadSelection(albumId, selected) } catch (caught) { setError(caught) } }
 
   return <main className="album-page page-shell">
     <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions"><button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
+    {uploadReport && <div className={`upload-report ${uploadReport.results.some((result) => !result.ok) ? 'has-errors' : ''}`} role="status"><b>{uploadReport.results.filter((result) => result.ok).length}장 업로드 완료</b>{uploadReport.results.some((result) => !result.ok) && <span>실패: {uploadReport.results.filter((result) => !result.ok).map((result) => result.filename).join(', ')}</span>}<button onClick={() => setUploadReport(null)} aria-label="업로드 결과 닫기">×</button></div>}
     <ProgressBanner counts={counts} />
     <div className="gallery-toolbar"><div className="gallery-tabs" role="tablist">{([['all', '전체'], ['mine', '내 사진'], ['group', '단체샷'], ['best', '베스트컷']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? 'active' : ''} onClick={() => changeTab(key)}>{key === 'best' && <SparkleIcon />}{label}</button>)}</div><button className={`select-mode ${selecting ? 'active' : ''}`} onClick={() => { setSelecting(!selecting); setSelected([]) }}>{selecting ? '선택 취소' : '사진 선택'}</button></div>
     <div className="filters"><span>함께 나온 사람</span><div className="chip-row">{album?.members.map((member, index) => <button key={member.id} className={`person-chip ${memberIds.includes(member.id) ? 'active' : ''}`} onClick={() => toggleMember(member.id)}><span className={`avatar color-${index}`}>{member.display_name.slice(0, 1)}</span>{member.display_name}{memberIds.includes(member.id) && <CheckIcon />}</button>)}</div><span className="filter-divider" /><div className="chip-row">{['', '바다', '제주', '노을'].map((item) => <button key={item || 'all'} className={`tag-chip ${tag === item ? 'active' : ''}`} onClick={() => { setTag(item); setPage(1) }}>{item || '모든 태그'}</button>)}</div></div>

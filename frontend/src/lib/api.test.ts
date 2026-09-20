@@ -20,7 +20,7 @@ describe('MockApiClient', () => {
 
   it('수동 인물 변경 뒤에도 해당 연결을 보존한다', async () => {
     const client = new MockApiClient()
-    const changed = await client.updatePhotoMembers('p-1', ['m-4'])
+    const changed = await client.updatePhotoMembers('p-1', [{ member_id: 'm-4', excluded: false }])
     await client.reanalyzePhoto('p-1')
     const after = await client.getPhoto('p-1')
 
@@ -45,5 +45,33 @@ describe('HttpApiClient', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: 'FORBIDDEN', message: '권한이 없어요.' }), { status: 403 })))
 
     await expect(new HttpApiClient().getAlbum('album-1')).rejects.toEqual(expect.objectContaining({ code: 'FORBIDDEN', status: 403 }))
+  })
+
+  it('사진 정렬 값을 백엔드 계약에 맞게 변환한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [], page: 1, page_size: 50, total: 0 }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await new HttpApiClient().listPhotos('album-1', { sort: 'best_desc', page: 1 })
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('sort=best_score_desc')
+  })
+
+  it('인물 제외 상태를 서버 payload에 명시한다', async () => {
+    const responsePhoto = { id: 'p-1', album_id: 'a-1', filename: 'x.jpg', captured_at: null, created_at: '2026-09-20T00:00:00Z', analysis_status: 'done', analysis_error: null, provider: 'fixture', mode: 'mock', face_count: 1, shot_type: 'solo', tags: [], quality: {}, best_score: null, is_best: false, members: [] }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(responsePhoto), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await new HttpApiClient().updatePhotoMembers('p-1', [{ member_id: 'm-1', excluded: true }])
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/photos/p-1/members', expect.objectContaining({ body: JSON.stringify({ members: [{ member_id: 'm-1', excluded: true }] }) }))
+  })
+
+  it('다중 업로드의 파일별 성공과 실패를 반환한다', async () => {
+    const payload = { results: [{ filename: 'ok.jpg', ok: true, photo: null, error: null }, { filename: 'bad.png', ok: false, photo: null, error: { code: 'TOO_LARGE', message: '파일이 너무 커요.' } }] }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    const result = await new HttpApiClient().uploadPhotos('album-1', [new File(['x'], 'ok.jpg')])
+
+    expect(result.results).toEqual(payload.results)
   })
 })
