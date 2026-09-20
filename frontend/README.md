@@ -21,4 +21,4 @@ npm run build
 npm audit --audit-level=moderate
 ```
 
-5번 역할의 편집·승인 UI는 `src/components/EditorSlot.tsx`의 `EditorPanelProps`를 구현해 교체한다.
+편집·승인 UI는 `src/editor/EditorPanel.tsx`에 구현되어 `src/pages/PhotoDetail.tsx`에서 사진 상세 화면과 연결된다.
