@@ -20,6 +20,7 @@ from backend.app.models import (
     Photo,
     PhotoMember,
 )
+from backend.app.phash import looks_like_duplicate
 from backend.app.storage import S3Storage, Storage, make_storage
 
 logger = logging.getLogger("zzik.worker")
@@ -178,33 +179,61 @@ def apply_result(db: Session, photo: Photo, result: dict) -> None:
 
 
 def recompute_bursts(db: Session, album_id: str, shot_type: str) -> None:
+    """연사와 '내용이 거의 같은 사진'을 한 묶음으로 만든다.
+
+    묶는 조건은 두 가지고, 둘 중 하나만 맞아도 같은 묶음이 된다.
+      1. 촬영 시각이 3초 이내로 붙어 있다 (EXIF 가 있는 사진끼리)
+      2. 지각 해시가 거의 같다 (EXIF 가 없어도, 며칠 뒤에 올려도 잡힌다)
+    """
     photos = list(
         db.scalars(
-            select(Photo)
-            .where(
+            select(Photo).where(
                 Photo.album_id == album_id,
                 Photo.shot_type == shot_type,
                 Photo.analysis_status == AnalysisStatus.DONE.value,
-                Photo.captured_at.is_not(None),
             )
-            .order_by(Photo.captured_at, Photo.id)
         ).all()
     )
+    # 촬영 시각이 없는 사진도 후보에 넣는다(해시로는 비교할 수 있다). 순서는
+    # 촬영 시각이 있으면 그것, 없으면 업로드 시각으로 잡아 3초 규칙을 적용한다.
+    photos.sort(key=lambda item: (comparable_time(item.captured_at or item.created_at), item.id))
     for photo in photos:
         photo.burst_group_id = None
         photo.is_best = True
-    clusters: list[list[Photo]] = []
-    for photo in photos:
-        if (
-            not clusters
-            or comparable_time(photo.captured_at)
-            - comparable_time(clusters[-1][-1].captured_at)
-            > timedelta(seconds=3)
+
+    parent = list(range(len(photos)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[max(left_root, right_root)] = min(left_root, right_root)
+
+    for index in range(1, len(photos)):
+        previous, current = photos[index - 1], photos[index]
+        if previous.captured_at is None or current.captured_at is None:
+            continue
+        if comparable_time(current.captured_at) - comparable_time(previous.captured_at) <= timedelta(
+            seconds=3
         ):
-            clusters.append([photo])
-        else:
-            clusters[-1].append(photo)
-    for cluster in clusters:
+            union(index - 1, index)
+
+    # 해시 비교는 사진 수의 제곱이지만 64비트 XOR 한 번이라 앨범 한 개 규모에서는 무시할 수 있다.
+    for left in range(len(photos)):
+        for right in range(left + 1, len(photos)):
+            if looks_like_duplicate(photos[left].phash, photos[right].phash):
+                union(left, right)
+
+    grouped: dict[int, list[Photo]] = {}
+    for index, photo in enumerate(photos):
+        grouped.setdefault(find(index), []).append(photo)
+
+    for cluster in grouped.values():
         if len(cluster) < 2:
             continue
         group_id = str(uuid4())

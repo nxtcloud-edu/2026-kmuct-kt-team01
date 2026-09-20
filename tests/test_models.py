@@ -17,4 +17,4 @@ def test_schema_can_be_created_in_empty_database() -> None:
         "photos",
     }
     photo_columns = {column["name"] for column in inspector.get_columns("photos")}
-    assert {"processing_started_at", "analysis_attempts"} <= photo_columns
+    assert {"processing_started_at", "analysis_attempts", "phash"} <= photo_columns

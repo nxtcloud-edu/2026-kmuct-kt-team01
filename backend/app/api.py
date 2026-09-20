@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
 from backend.app.auth import SessionCodec
 from backend.app.errors import ApiError, error_body
+from backend.app.phash import compute_dhash
 from backend.app.models import (
     Album,
     AnalysisStatus,
@@ -289,6 +290,7 @@ def upload_photos(
                 s3_key=original_key,
                 thumb_key=thumb_key,
                 content_hash=hashlib.sha256(raw).hexdigest(),
+                phash=compute_dhash(raw),
                 mime=detected_mime,
                 width=width,
                 height=height,

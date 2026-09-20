@@ -143,6 +143,8 @@ class Photo(Base):
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     quality: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     burst_group_id: Mapped[str | None] = mapped_column(String(36))
+    # dHash 16진수 16자리. 내용이 거의 같은 사진을 묶는 데 쓴다 (backend/app/phash.py).
+    phash: Mapped[str | None] = mapped_column(String(16))
     best_score: Mapped[float | None] = mapped_column(Float)
     is_best: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
