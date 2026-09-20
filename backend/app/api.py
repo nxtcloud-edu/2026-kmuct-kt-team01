@@ -8,7 +8,7 @@ import math
 from collections import Counter
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
@@ -190,6 +190,10 @@ def get_album(
     photo_count = db.scalar(
         select(func.count(Photo.id)).where(Photo.album_id == album_id)
     ) or 0
+    photo_tags = db.scalars(
+        select(Photo.tags).where(Photo.album_id == album_id)
+    ).all()
+    tags = sorted({tag for items in photo_tags for tag in (items or [])})
     return AlbumOut(
         id=album.id,
         name=album.name,
@@ -197,6 +201,7 @@ def get_album(
         created_at=album.created_at,
         members=[MemberOut.model_validate(item) for item in members],
         photo_count=photo_count,
+        tags=tags,
     )
 
 
@@ -313,6 +318,7 @@ def list_photos(
     db: Annotated[Session, Depends(get_db)],
     member_id: list[str] | None = Query(default=None),
     shot_type: str | None = None,
+    face_status: Literal["unregistered", "uncertain", "no_face"] | None = None,
     tag: str | None = None,
     only_best: bool = False,
     sort: str = "created_at_desc",
@@ -330,6 +336,12 @@ def list_photos(
         )
     if shot_type:
         query = query.where(Photo.shot_type == shot_type)
+    if face_status == "unregistered":
+        query = query.where(Photo.unregistered_face_count > 0)
+    elif face_status == "uncertain":
+        query = query.where(Photo.uncertain_face_count > 0)
+    elif face_status == "no_face":
+        query = query.where(Photo.shot_type == "no_face")
     if only_best:
         query = query.where(Photo.is_best.is_(True))
     order = {

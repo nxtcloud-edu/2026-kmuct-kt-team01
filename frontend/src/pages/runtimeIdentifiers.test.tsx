@@ -37,6 +37,22 @@ describe('runtime album identifiers', () => {
     await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ member_ids: ['member-real'] })))
   })
 
+  it('shows analyzed tags and filters unresolved faces', async () => {
+    const client = {
+      getAlbum: vi.fn().mockResolvedValue({ id: 'album-real', name: '키로톤', invite_code: 'DEMO26', created_at: '2026-09-20T00:00:00Z', photo_count: 0, members: [], tags: ['실내', '노트북'] }),
+      listPhotos: vi.fn().mockResolvedValue({ items: [], page: 1, page_size: 8, total: 0, total_pages: 1 }),
+      getStatus: vi.fn().mockResolvedValue({ pending: 0, processing: 0, done: 0, failed: 0 }),
+    } as unknown as ApiClient
+
+    render(<Gallery client={client} albumId="album-real" currentMemberId="member-real" onOpen={() => {}} onCoverage={() => {}} />)
+    await screen.findByRole('button', { name: '노트북' })
+
+    fireEvent.click(screen.getByRole('button', { name: '노트북' }))
+    await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ tag: '노트북' })))
+    fireEvent.click(screen.getByRole('button', { name: '미등록 인물' }))
+    await waitFor(() => expect(client.listPhotos).toHaveBeenLastCalledWith('album-real', expect.objectContaining({ tag: '노트북', face_status: 'unregistered' })))
+  })
+
   it('loads detail members from the runtime album instead of a sample ID', async () => {
     const getAlbum = vi.fn().mockResolvedValue({
       id: 'album-real', name: '부산', invite_code: 'BUSAN1', created_at: '2026-09-20T00:00:00Z', photo_count: 1,
