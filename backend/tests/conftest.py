@@ -57,5 +57,7 @@ def clean_analysis_env(monkeypatch):
         "MOCK_MANIFEST_PATH",
         "MOCK_SYNTHETIC_MATCH",
         "S3_BUCKET",
+        "SUMMARY_PROVIDER",
+        "BEDROCK_MODEL_ID",
     ):
         monkeypatch.delenv(key, raising=False)

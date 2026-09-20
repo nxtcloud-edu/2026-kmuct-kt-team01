@@ -41,7 +41,7 @@
 | EXIF 촬영시각·GPS, 없으면 null (추측 안 함) | 완료·검증 |
 | 연사 그룹화 + 대표 컷 `group_bursts` | 완료·검증 |
 | 3번용 계약 문서 `docs/contracts/role-4-analysis.md` | 완료 |
-| Bedrock 여행 요약 (8-a) | **미착수** |
+| Bedrock 여행 요약 (8-a) `app/insights.py` | **부분** — 코드·가짜클라이언트 검증 완료, 실제 Bedrock 호출 **미검증** |
 | 자연어 검색 구조화 (8-b) | **미착수** |
 | 미등록 얼굴 그룹 생성·병합·분리 (8-c) | **미착수** |
 | 실제 Rekognition 호출 | **미실행** (아래) |
@@ -51,7 +51,7 @@
 
 ```
 python -m pytest backend/tests -q
-66 passed in 0.98s          # 2026-09-20, Python 3.13.5, Windows
+91 passed in 7.78s          # 2026-09-20, Python 3.13.5, Windows
 ```
 
 - `backend/tests/test_analysis.py` — 제공자 설정, validate_reference 3종,
@@ -60,6 +60,8 @@ python -m pytest backend/tests -q
 - `backend/tests/test_quality.py` — 이미지 검사·축소, IoU, 태그, 품질 공식,
   EXIF 유/무, 연사 그룹화
 - `backend/tests/test_contract_examples.py` — 3번이 받을 응답·오류 형태
+- `backend/tests/test_insights.py` — 대표 사진 선정 규칙, 집계 사실, mock/off,
+  Bedrock 요청 인자·응답 파싱·오류 변환(가짜 클라이언트)
 
 테스트는 DB·S3·AWS 를 전혀 쓰지 않는다. 공유 RDS 와 데모 데이터를 건드리지 않았다.
 샘플 이미지는 Pillow 로 그 자리에서 만든 합성 이미지(단색)이고 저장소에 실사진이 없다.
@@ -72,6 +74,16 @@ python -m pytest backend/tests -q
 - **비용·처리량** — 사진 1장당 호출 수는 `calls` 로 노출되지만(멤버 N명이면
   DetectFaces 1 + CompareFaces N + DetectLabels 1) 실제 요금·초당 처리량은 미측정.
 - **2000장 처리** — 시도하지 않았다.
+- **Bedrock 여행 요약의 실제 호출** — 한 번도 실행하지 않았다. 계정에 
+  `anthropic.claude-opus-5` 접근 권한이 있는지도 확인하지 못했다.
+  요약 문장 품질·요금 역시 미측정.
+
+## 파일 소유권 관련 메모
+
+- 역할표에 없던 파일 3개를 새로 만들었다. 전부 역할 4 소유로 둔다:
+  `backend/app/insights.py` (T3 요약), `backend/app/__init__.py` (빈 파일),
+  `backend/.gitignore` (`__pycache__` 제외). 3번이 다른 위치를 원하면 옮겨도 된다.
+- 남의 소유 파일은 건드리지 않았다. `requirements.txt` 는 3번에게 요청 사항으로만 남겼다.
 
 ## 남은 일 / 의존성
 
