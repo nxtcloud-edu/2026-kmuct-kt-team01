@@ -1,6 +1,56 @@
-.venv/
-__pycache__/
-.pytest_cache/
-*.py[cod]
+# Secrets and runtime configuration
 .env
+.env.*
+!.env.example
+runtime.env
+*.pem
+*.key
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+playwright-report/
+test-results/
+
+# Build and package output
+build/
+*.egg-info/
+
+# Local data and backups
+*.db
+*.sqlite*
+*.dump
+*.backup
+backups/
+uploads/
 storage/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# Local ROLE-05 verification environments; never publish interpreters/test caches.
+.venv-role5/
+.venv-role5-py313/
+.role5-tools/

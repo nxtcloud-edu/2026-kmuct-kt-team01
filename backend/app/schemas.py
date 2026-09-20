@@ -23,6 +23,7 @@ class AlbumJoin(BaseModel):
 class AlbumCreated(BaseModel):
     album_id: str
     invite_code: str
+    member_id: str
 
 
 class MemberOut(ORMModel):
@@ -43,6 +44,7 @@ class AlbumOut(ORMModel):
 
 class PhotoMemberOut(BaseModel):
     member_id: str
+    display_name: str
     similarity: float | None
     source: str
     excluded: bool
@@ -53,6 +55,8 @@ class PhotoOut(ORMModel):
     album_id: str
     uploader_member_id: str
     filename: str
+    image_url: str
+    thumb_url: str
     mime: str
     width: int
     height: int
@@ -64,6 +68,8 @@ class PhotoOut(ORMModel):
     provider: str | None
     mode: str | None
     face_count: int
+    uncertain_face_count: int
+    unregistered_face_count: int
     shot_type: str
     tags: list[str]
     quality: dict[str, Any]
@@ -78,6 +84,7 @@ class PhotoPage(BaseModel):
     page: int
     page_size: int
     total: int
+    total_pages: int
 
 
 class UploadResult(BaseModel):

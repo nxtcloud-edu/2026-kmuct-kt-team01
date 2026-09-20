@@ -1,0 +1,72 @@
+# Role 2 — frontend handoff
+
+- 실행 ID: `20260920`
+- 공식 저장소: `nxtcloud-edu/2026-kmuct-kt-team01`
+- 브랜치: `work/20260920/role-2`
+- 기준 브랜치: `main`
+- 담당 계정: `seopseopi`
+- Draft PR: https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/pull/2
+- 최근 기능 커밋: `4ca8108a85f7ade81c3f90e0d919c08489660e81`
+- 현재 단계: 프론트와 실제 API 계약 연결 완료, 조립 브랜치 반영 및 브라우저 API E2E 대기
+
+## 기능별 커밋
+
+1. `7f17659` — React 19, TypeScript, Vite 기반과 앱 셸
+2. `203a94e` — 도메인 타입, `/api` 클라이언트, 명시적 sample/mock 클라이언트
+3. `5213e68` — 앨범 생성·참여와 기준 얼굴 등록
+4. `795b73f` — 갤러리, 2초 상태 폴링, 멤버 AND 필터, 태그, 페이지네이션, ZIP 선택
+5. `6cc2524` — 사진 상세, 인물 수정, 품질, 원본 요청, 누락 현황, 역할 5 편집 슬롯
+6. `b5b611c` — API·상태 컴포넌트 테스트와 실행 문서
+7. `1df5ad3` — 역할 5 리뷰 반영, 실제 백엔드 payload·정렬·업로드 결과 정합화
+8. `2bfaff6` — 역할 5 편집·버전·승인 패널을 사진 상세에 연결
+9. `4ca8108` — 생성·참여 응답의 실제 앨범/멤버 ID를 앱 전체에 전달
+
+## 구현 상태
+
+- 완료: 앨범 생성/초대코드 참여 화면
+- 완료: 기준 얼굴 등록과 `NO_FACE`/`MULTIPLE_FACES` 개별 안내
+- 완료: 전체/내 사진/단체샷/베스트컷, 멤버 AND 필터, 태그, 페이지네이션
+- 완료: 2초 분석 현황 폴링, 사진 선택과 ZIP 다운로드 요청
+- 완료: 사진 상세, 인물 수동 변경, 품질/분석 상태, 원본 다운로드 요청
+- 완료: 멤버별 사진 누락 현황
+- 완료: `/api` 상대경로, `credentials: include`, 공통 JSON 오류 변환
+- 완료: 샘플과 실제 API 모드 분리, 샘플 화면 배지
+- 부분: 업로드 API와 진행 UI. 파일별 성공/실패 표시는 실제 백엔드 응답 연결 후 보완
+- 완료: 역할 5 소유의 보정·원본 비교·버전·승인 패널과 사진 상세 연결
+- 완료: 생성·참여 결과의 실제 `album_id`/`member_id`를 갤러리·내 사진·상세·누락 현황에 전달
+- 부분: 편집 저장 후 사진 상세 재조회. 실제 최종본 URL 갱신은 백엔드 계약 대기
+- 미검증: 실제 FastAPI 세션/업로드/다운로드, EC2 배포 주소의 모바일 브라우저
+
+## 공개 연결 지점
+
+- API 타입 및 구현: `frontend/src/lib/api.ts`
+- 도메인 타입: `frontend/src/lib/types.ts`
+- 역할 5 편집 패널: `frontend/src/editor/EditorPanel.tsx`
+- 상세 화면 연결: `frontend/src/pages/PhotoDetail.tsx`
+- 실제 API 모드: URL query `?data=api`
+
+## 검사
+
+- `npm run typecheck` — 통과
+- `npm test` — 4 files, 22 tests 통과
+- `npm run build` — 통과
+- `npm audit --audit-level=moderate` — 취약점 0건
+- Playwright — 데스크톱/390px 모바일, 랜딩→앨범→사진 상세→편집 패널, 콘솔 오류 0건
+
+## 남은 의존성
+
+- 역할 3: API 계약 `489fa0b`, 생성·참여 `member_id` 응답 `4121b80` 완료
+- 역할 5/3: 편집 backend adapter, 서버 렌더 미리보기와 최종본 다운로드 URL 계약
+- 역할 1: Nginx 정적 빌드와 `/api` proxy 환경에서 검증
+
+## 요청 상태
+
+- `ZZIK:20260920:role-2:api-integration-01` → role-3, APPLIED/CLOSED (`489fa0b`, `4121b80`)
+  - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/6
+- `ZZIK:20260920:role-2:editor-slot-01` → role-5, APPLIED/CLOSED (`2bfaff6`)
+  - https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/5
+- PR #2 교차 검토자 `tkdgur3207` 지정 완료
+- role-5 계약 리뷰 `5258615747` → APPLIED (`1df5ad3`)
+- role-5 최신 재검토 `5258698258` → 기존 지적 4건 반영 확인, EditorPanel 통합 head 재검토 요청
+- `ZZIK:20260920:role-2:dependency-session-01` → role-1, COMPLETE/CLOSED
+  - role-3/5 전달 상태 확인 완료: https://github.com/nxtcloud-edu/2026-kmuct-kt-team01/issues/11
