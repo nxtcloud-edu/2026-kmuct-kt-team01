@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from .quality import AnalysisError, compute_best_score, inspect_image
+from .quality import AnalysisError, inspect_image
 
 PROVIDER_OFF = "off"
 PROVIDER_GATEWAY = "gateway"
@@ -99,9 +99,8 @@ def enrich_analysis(
             {
                 "role": "system",
                 "content": (
-                    "You classify travel photos. Return one JSON object only with keys tags and quality. "
-                    "tags must contain 0-8 short Korean scene or activity labels. quality must contain "
-                    "sharpness and brightness as numbers from 0 to 100, and eyes_open_ratio from 0 to 1. "
+                    "You classify travel photos. Return one JSON object only with the key tags. "
+                    "tags must contain 0-8 short Korean scene or activity labels. "
                     "Do not identify people and do not infer sensitive traits."
                 ),
             },
@@ -152,9 +151,9 @@ def enrich_analysis(
 
     parsed = _parse_response(response)
     enriched = dict(result)
+    # 태그만 덮는다. quality·best_score 는 얼굴 공급자의 실측값을 그대로 둔다.
+    # 베스트컷·연속컷 대표 선정이 모델 추정치에 흔들리지 않아야 하기 때문이다.
     enriched["tags"] = _tags(parsed.get("tags"))
-    enriched["quality"] = _quality(parsed.get("quality"))
-    enriched["best_score"] = compute_best_score(enriched["quality"])
     enriched["provider"] = f"{result.get('provider') or 'unknown'}+gateway"
     enriched["mode"] = MODE_HYBRID
     calls = dict(result.get("calls") or {})
@@ -163,7 +162,7 @@ def enrich_analysis(
     enriched["calls"] = calls
     enriched["vision_model_id"] = settings.model_id
     warnings = list(result.get("warnings") or [])
-    warnings.append("장면·품질은 외부 AI가 분석했고 얼굴 매칭은 FACE_PROVIDER 결과를 유지했습니다")
+    warnings.append("장면 태그는 외부 AI가 분류했고 얼굴 매칭과 품질 지표는 FACE_PROVIDER 결과를 유지했습니다")
     enriched["warnings"] = warnings
     return enriched
 
@@ -207,19 +206,3 @@ def _tags(value: Any) -> list[str]:
         if tag and tag not in tags:
             tags.append(tag)
     return tags[:8]
-
-
-def _quality(value: Any) -> dict[str, float]:
-    if not isinstance(value, dict):
-        raise AnalysisError("GATEWAY_RESPONSE", "AI 사진 품질 형식이 올바르지 않습니다", retryable=False)
-    try:
-        sharpness = min(100.0, max(0.0, float(value["sharpness"])))
-        brightness = min(100.0, max(0.0, float(value["brightness"])))
-        eyes_open_ratio = min(1.0, max(0.0, float(value["eyes_open_ratio"])))
-    except (KeyError, TypeError, ValueError) as exc:
-        raise AnalysisError("GATEWAY_RESPONSE", "AI 사진 품질 형식이 올바르지 않습니다", retryable=False) from exc
-    return {
-        "sharpness": round(sharpness, 4),
-        "brightness": round(brightness, 4),
-        "eyes_open_ratio": round(eyes_open_ratio, 4),
-    }

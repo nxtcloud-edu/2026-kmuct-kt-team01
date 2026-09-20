@@ -33,7 +33,7 @@ def test_gateway_requires_https_key_and_model():
     assert exc.value.code == "CONFIG_INVALID"
 
 
-def test_gateway_enriches_tags_quality_and_provenance():
+def test_gateway_replaces_tags_but_keeps_face_provider_quality():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url == "https://gateway.test/v1/chat/completions"
         assert request.headers["authorization"] == "Bearer secret"
@@ -47,7 +47,7 @@ def test_gateway_enriches_tags_quality_and_provenance():
                 "choices": [
                     {
                         "message": {
-                            "content": '{"tags":["바다","노을","바다"],"quality":{"sharpness":84,"brightness":72,"eyes_open_ratio":0.75}}'
+                            "content": '{"tags":["바다","노을","바다"]}'
                         }
                     }
                 ]
@@ -55,11 +55,13 @@ def test_gateway_enriches_tags_quality_and_provenance():
         )
 
     settings = GatewaySettings("gateway", "https://gateway.test/v1", "secret", "bedrock-haiku", 5)
+    measured_quality = {"sharpness": 91.5, "brightness": 60.0, "eyes_open_ratio": 1.0}
     base = {
         "provider": "mock",
         "mode": "mock",
         "tags": ["합성"],
-        "quality": {"sharpness": 1, "brightness": 1, "eyes_open_ratio": 0},
+        "quality": dict(measured_quality),
+        "best_score": 77.75,
         "calls": {"total": 0},
         "warnings": [],
     }
@@ -67,12 +69,13 @@ def test_gateway_enriches_tags_quality_and_provenance():
         result = enrich_analysis(base, _image_bytes(), settings=settings, client=client)
 
     assert result["tags"] == ["바다", "노을"]
-    assert result["quality"] == {"sharpness": 84.0, "brightness": 72.0, "eyes_open_ratio": 0.75}
+    # 품질 지표와 베스트컷 점수는 얼굴 공급자의 실측값을 그대로 유지한다.
+    assert result["quality"] == measured_quality
+    assert result["best_score"] == 77.75
     assert result["provider"] == "mock+gateway"
     assert result["mode"] == "hybrid"
     assert result["calls"] == {"total": 1, "vision_classify": 1}
     assert result["vision_model_id"] == "bedrock-haiku"
-    assert result["best_score"] > 0
 
 
 def test_gateway_auth_error_is_not_retryable():
