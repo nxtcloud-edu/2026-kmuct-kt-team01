@@ -424,6 +424,166 @@
         2,
         3
       ]
+    },
+    "8e2f86675926772ad346f799412449ad8429eef09852d42802b33a8bc67c7f05": {
+      "label": "황연주 - 또렷함(베스트)",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1600,
+        "height": 1200
+      },
+      "quality": {
+        "sharpness": 78.0,
+        "brightness": 68.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        4
+      ]
+    },
+    "4a48640fe5a5610686c47ea01ecc991d0ff43993ecb88b029f767d4617b11a85": {
+      "label": "황연주 - 살짝 흔들림",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1568,
+        "height": 1176
+      },
+      "quality": {
+        "sharpness": 55.0,
+        "brightness": 65.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        4
+      ]
+    },
+    "ce82eb017639a785582b74de8f45c4c078fe1b026492ab54a498d8903d1dbc30": {
+      "label": "황연주 - 약간 어둡게",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1536,
+        "height": 1152
+      },
+      "quality": {
+        "sharpness": 50.0,
+        "brightness": 48.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        4
+      ]
+    },
+    "36985ccf65f1f393788e85c8c5090e051f3f22298205d7aa7f3db450600acadc": {
+      "label": "황연주 - 살짝 과다노출",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1552,
+        "height": 1164
+      },
+      "quality": {
+        "sharpness": 58.0,
+        "brightness": 82.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        4
+      ]
+    },
+    "5604744b162bd0d58df2acdb631704dbd0836945d12a543428eabca01e328a85": {
+      "label": "이상혁 - 또렷함(베스트)",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1600,
+        "height": 1200
+      },
+      "quality": {
+        "sharpness": 76.0,
+        "brightness": 66.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        3
+      ]
+    },
+    "4e697afb6f7837644b963f61ca5b0f9d2ff78eea61cec0c60095a318a6610339": {
+      "label": "이상혁 - 살짝 흔들림",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1568,
+        "height": 1176
+      },
+      "quality": {
+        "sharpness": 54.0,
+        "brightness": 63.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        3
+      ]
+    },
+    "5ce66fa566dab829ff126e704c93795c62468423d95a55311d78c375cab83686": {
+      "label": "이상혁 - 약간 어둡게",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1536,
+        "height": 1152
+      },
+      "quality": {
+        "sharpness": 49.0,
+        "brightness": 47.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        3
+      ]
+    },
+    "3355c096e1d575d86102ee698892eb25cee0fb5643acbcb3b220748dd99de115": {
+      "label": "이상혁 - 살짝 과다노출",
+      "source": "2026-09-20 KIROTHON 해커톤(토큰사냥꾼 팀) 현장에서 팀원이 직접 촬영 (연속 컷)",
+      "license": "촬영자 및 사진에 등장한 팀원 전원 동의 (팀 자체 데모 시연용)",
+      "face_count": 1,
+      "tags": [],
+      "image": {
+        "mime": "image/jpeg",
+        "width": 1552,
+        "height": 1164
+      },
+      "quality": {
+        "sharpness": 57.0,
+        "brightness": 80.0,
+        "eyes_open_ratio": 1.0
+      },
+      "member_slots": [
+        3
+      ]
     }
   }
 }
