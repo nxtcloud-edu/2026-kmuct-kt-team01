@@ -13,7 +13,7 @@
 </div>
 
 <p align="center">
-  <img src="./docs/assets/readme/landing.png" width="100%" alt="찍 ZZIK 랜딩 화면" />
+  <img src="./docs/assets/readme/landing-passcode.png" width="100%" alt="비밀번호 재입장이 포함된 찍 ZZIK 랜딩 화면" />
 </p>
 
 2026년 국민대학교 캠퍼스타운 키로톤 01팀 **토큰사냥꾼** 프로젝트입니다.
