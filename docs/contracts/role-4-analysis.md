@@ -22,7 +22,7 @@ from app.quality import inspect_image
 |---|---|---|
 | `FACE_PROVIDER` | `mock` | `rekognition` 또는 `mock`. **자동 폴백 없음** |
 | `AWS_REGION` | `us-east-1` | boto3 에 region_name 만 넘긴다. 키는 넣지 않는다 |
-| `SIMILARITY_THRESHOLD` | `90.0` | 인물 확정 임계 |
+| `SIMILARITY_THRESHOLD` | `90.0` (`local` 은 `70.0`) | 인물 확정 임계. `local` 은 SFace cosine 을 로지스틱으로 옮긴 점수라 눈금이 달라 기본값이 낮다 |
 | `CANDIDATE_MARGIN` | `5.0` | 후보 확장 폭 겸 1·2위 최소 격차 |
 | `MOCK_MANIFEST_PATH` | `backend/samples/mock_manifest.json` | mock 정답 manifest |
 | `MOCK_SYNTHETIC_MATCH` | `1` | mock 에서 등록 안 된 사진에 합성 인물을 붙일지 |
