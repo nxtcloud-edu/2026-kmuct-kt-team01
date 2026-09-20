@@ -53,6 +53,9 @@ GALLERY_PHOTOS = [
     "단체사진, 황연주, 유준석, 김규태, 이상혁.jpeg",
 ]
 
+# 데모용 앨범이라 모든 멤버가 같은 비밀번호를 쓴다. 실제 사용자 계정이 아니다.
+DEMO_PASSCODE = "kirothon"
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -63,7 +66,12 @@ def main() -> None:
         # 1) 앨범 생성 (첫 멤버 = 유준석)
         creator_name, creator_ref = MEMBERS[0]
         resp = client.post(
-            "/api/albums", json={"name": "KIROTHON 토큰사냥꾼", "display_name": creator_name}
+            "/api/albums",
+            json={
+                "name": "KIROTHON 토큰사냥꾼",
+                "display_name": creator_name,
+                "passcode": DEMO_PASSCODE,
+            },
         )
         resp.raise_for_status()
         created = resp.json()
@@ -77,7 +85,12 @@ def main() -> None:
         for name, _ref in MEMBERS[1:]:
             client.cookies.clear()
             resp = client.post(
-                "/api/albums/join", json={"invite_code": invite_code, "display_name": name}
+                "/api/albums/join",
+                json={
+                    "invite_code": invite_code,
+                    "display_name": name,
+                    "passcode": DEMO_PASSCODE,
+                },
             )
             resp.raise_for_status()
             joined = resp.json()

@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.app.passcodes import MAX_PASSCODE_LENGTH, MIN_PASSCODE_LENGTH
+
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -13,17 +15,22 @@ class ORMModel(BaseModel):
 class AlbumCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     display_name: str = Field(min_length=1, max_length=100)
+    passcode: str = Field(min_length=MIN_PASSCODE_LENGTH, max_length=MAX_PASSCODE_LENGTH)
 
 
 class AlbumJoin(BaseModel):
     invite_code: str = Field(min_length=4, max_length=32)
     display_name: str = Field(min_length=1, max_length=100)
+    passcode: str = Field(min_length=MIN_PASSCODE_LENGTH, max_length=MAX_PASSCODE_LENGTH)
 
 
 class AlbumCreated(BaseModel):
     album_id: str
     invite_code: str
     member_id: str
+    # 기존 멤버로 다시 들어온 경우 True. 프런트가 기준 사진 단계를 건너뛰는 데 쓴다.
+    rejoined: bool = False
+    reference_indexed: bool = False
 
 
 class MemberOut(ORMModel):
@@ -113,6 +120,7 @@ class StatusOut(BaseModel):
     processing: int
     done: int
     failed: int
+
 
 
 class CoverageMember(BaseModel):

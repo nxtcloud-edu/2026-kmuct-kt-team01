@@ -5,6 +5,7 @@ import hashlib
 import zipfile
 from urllib.parse import quote
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
@@ -17,6 +18,18 @@ from backend.app.models import Approval, Base, Edit, Member, Photo, PhotoMember
 def jpeg_bytes() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (32, 24), "#7c3aed").save(output, format="JPEG")
+    return output.getvalue()
+
+
+def heic_bytes(width: int = 200, height: int = 160) -> bytes:
+    """iPhone 이 보내는 것과 같은 HEIC 바이트. pillow-heif 가 없으면 테스트를 건너뛴다."""
+    pillow_heif = pytest.importorskip("pillow_heif")
+    pillow_heif.register_heif_opener()
+    output = io.BytesIO()
+    try:
+        Image.new("RGB", (width, height), "#0ea5e9").save(output, format="HEIF", quality=80)
+    except Exception as exc:  # pragma: no cover - HEIF 인코더 없는 빌드
+        pytest.skip(f"이 환경의 libheif 에 HEIF 인코더가 없습니다: {exc}")
     return output.getvalue()
 
 
@@ -39,7 +52,8 @@ def make_client(tmp_path) -> tuple[TestClient, object]:
 
 def create_album(client: TestClient, name: str = "부산 여행") -> dict[str, str]:
     response = client.post(
-        "/api/albums", json={"name": name, "display_name": "민지"}
+        "/api/albums",
+        json={"name": name, "display_name": "민지", "passcode": "owner-pass"},
     )
     assert response.status_code == 201
     assert response.json()["member_id"]
@@ -79,7 +93,7 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     assert response.status_code == 200
     results = response.json()["results"]
     assert [item["ok"] for item in results] == [True, False]
-    assert results[1]["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+    assert results[1]["error"]["code"] == "INVALID_IMAGE"
 
     with app.state.session_factory() as db:
         assert db.scalar(select(func.count(Photo.id))) == 1
@@ -90,6 +104,68 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     assert listing.json()["items"][0]["analysis_status"] == "pending"
     assert listing.json()["items"][0]["provider"] is None
     assert listing.json()["items"][0]["mode"] is None
+
+
+def test_upload_accepts_jpeg_with_nonstandard_declared_type(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+
+    response = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[
+            ("files", ("phone.JPG", jpeg_bytes(), "image/jpg")),
+            ("files", ("empty-type.jpeg", jpeg_bytes(), "application/octet-stream")),
+        ],
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [item["ok"] for item in results] == [True, True]
+
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count(Photo.id))) == 2
+
+    # 선언된 Content-Type 이 image/jpg 든 octet-stream 이든 두 장 모두 목록에 보여야 한다.
+    listing = client.get(f"/api/albums/{album['album_id']}/photos")
+    assert listing.status_code == 200
+    assert listing.json()["total"] == 2
+    assert [item["analysis_status"] for item in listing.json()["items"]] == ["pending", "pending"]
+
+
+def test_upload_converts_iphone_heic_to_jpeg(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+
+    response = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("IMG_0001.HEIC", heic_bytes(), "image/heic"))],
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [item["ok"] for item in results] == [True], results
+
+    with app.state.session_factory() as db:
+        photo = db.scalars(select(Photo)).one()
+        assert photo.mime == "image/jpeg"
+        assert (photo.width, photo.height) == (200, 160)
+        stored = app.state.storage.get(photo.s3_key)
+    # 저장된 원본도 JPEG 이어야 워커·브라우저가 그대로 읽는다.
+    assert stored.startswith(b"\xff\xd8\xff")
+
+
+def test_reference_endpoint_accepts_iphone_heic(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    create_album(client)
+
+    response = client.post(
+        "/api/members/me/reference",
+        files={"file": ("IMG_0002.HEIC", heic_bytes(), "image/heic")},
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["reference_indexed"] is True
+
+    with app.state.session_factory() as db:
+        member = db.get(Member, response.json()["member_id"])
+        assert app.state.storage.get(member.reference_key).startswith(b"\xff\xd8\xff")
 
 
 def test_download_with_non_ascii_filename_does_not_500(tmp_path) -> None:
@@ -145,7 +221,11 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
     invitee = TestClient(app)
     joined = invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     )
     assert joined.status_code == 200
     assert joined.json()["member_id"]
@@ -233,7 +313,11 @@ def test_role5_edit_approval_and_final_zip_preserve_original(tmp_path) -> None:
     invitee = TestClient(app)
     assert invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     ).status_code == 200
     members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
     owner_id, invitee_id = [item["id"] for item in members]
@@ -353,6 +437,7 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("GET", "/api/photos/{photo_id}"),
         ("PUT", "/api/photos/{photo_id}/members"),
         ("POST", "/api/photos/{photo_id}/reanalyze"),
+        ("POST", "/api/albums/{album_id}/reanalyze"),
         ("GET", "/api/albums/{album_id}/status"),
         ("GET", "/api/albums/{album_id}/coverage"),
         ("GET", "/api/photos/{photo_id}/download"),
@@ -372,7 +457,11 @@ def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -
     invitee = TestClient(app)
     invitee.post(
         "/api/albums/join",
-        json={"invite_code": album["invite_code"], "display_name": "서준"},
+        json={
+            "invite_code": album["invite_code"],
+            "display_name": "서준",
+            "passcode": "guest-pass",
+        },
     )
     members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
     owner_id, invitee_id = [item["id"] for item in members]

@@ -14,12 +14,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
 from backend.app.auth import SessionCodec
 from backend.app.errors import ApiError, error_body
+from backend.app.passcodes import hash_passcode, verify_passcode
+from backend.app.phash import compute_dhash
 from backend.app.models import (
     Album,
     AnalysisStatus,
@@ -52,6 +54,7 @@ from backend.app.storage import (
     normalize_image,
     photo_keys,
     read_upload,
+    transcode_heif_to_jpeg,
 )
 
 router = APIRouter(prefix="/api")
@@ -160,7 +163,11 @@ def create_album(
     db: Annotated[Session, Depends(get_db)],
 ) -> AlbumCreated:
     album = Album(name=payload.name.strip(), invite_code=secrets.token_urlsafe(8))
-    member = Member(album=album, display_name=payload.display_name.strip())
+    member = Member(
+        album=album,
+        display_name=payload.display_name.strip(),
+        passcode_hash=hash_passcode(payload.passcode),
+    )
     db.add_all([album, member])
     db.commit()
     set_session_cookie(request, response, member.id)
@@ -179,7 +186,41 @@ def join_album(
     album = db.scalar(select(Album).where(Album.invite_code == payload.invite_code))
     if album is None:
         raise ApiError(404, "INVITE_NOT_FOUND", "초대 코드를 찾을 수 없습니다.")
-    member = Member(album_id=album.id, display_name=payload.display_name.strip())
+
+    display_name = payload.display_name.strip()
+    # 앨범 안에서는 이름이 곧 신원이다. 같은 이름이 이미 있으면 비밀번호로 본인을 확인하고
+    # 그 멤버로 다시 들어간다. 기준 사진과 올린 사진이 그대로 따라온다.
+    existing = db.scalar(
+        select(Member)
+        .where(Member.album_id == album.id, Member.display_name == display_name)
+        .order_by(Member.joined_at)
+    )
+    if existing is not None:
+        if existing.passcode_hash is None:
+            # 비밀번호 기능 전에 참여한 멤버다. 이 이름으로 처음 다시 들어오는 사람이
+            # 비밀번호를 정한다. 초대 코드를 아는 사람만 여기 닿을 수 있다는 가정에 기댄다.
+            existing.passcode_hash = hash_passcode(payload.passcode)
+            db.commit()
+        elif not verify_passcode(payload.passcode, existing.passcode_hash):
+            raise ApiError(
+                403,
+                "PASSCODE_MISMATCH",
+                "이미 있는 이름이에요. 비밀번호가 맞지 않으면 다른 이름으로 참여해 주세요.",
+            )
+        set_session_cookie(request, response, existing.id)
+        return AlbumCreated(
+            album_id=album.id,
+            invite_code=album.invite_code,
+            member_id=existing.id,
+            rejoined=True,
+            reference_indexed=existing.reference_indexed,
+        )
+
+    member = Member(
+        album_id=album.id,
+        display_name=display_name,
+        passcode_hash=hash_passcode(payload.passcode),
+    )
     db.add(member)
     db.commit()
     set_session_cookie(request, response, member.id)
@@ -226,7 +267,8 @@ def upload_reference(
     db: Annotated[Session, Depends(get_db)],
     storage: Annotated[Storage, Depends(get_storage)],
 ) -> dict[str, Any]:
-    raw = read_upload(file.file)
+    # iPhone HEIC 는 여기서 JPEG 로 바꿔 아래 분석·저장 계층이 손대지 않게 한다.
+    raw = transcode_heif_to_jpeg(read_upload(file.file))
     try:
         result = validate_reference(raw)
     except AnalysisUnavailable as exc:
@@ -269,7 +311,7 @@ def upload_photos(
     for upload in files:
         stored_keys: list[str] = []
         try:
-            raw = read_upload(upload.file)
+            raw = transcode_heif_to_jpeg(read_upload(upload.file))
             _, thumbnail, width, height, captured_at, detected_mime = normalize_image(
                 raw, upload.content_type
             )
@@ -287,6 +329,7 @@ def upload_photos(
                 s3_key=original_key,
                 thumb_key=thumb_key,
                 content_hash=hashlib.sha256(raw).hexdigest(),
+                phash=compute_dhash(raw),
                 mime=detected_mime,
                 width=width,
                 height=height,
@@ -335,6 +378,7 @@ def list_photos(
     face_status: Literal["unregistered", "uncertain", "no_face"] | None = None,
     tag: str | None = None,
     only_best: bool = False,
+    uploaded_by: Literal["me", "others"] | None = None,
     sort: str = "created_at_desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 50,
@@ -358,6 +402,12 @@ def list_photos(
         query = query.where(Photo.shot_type == "no_face")
     if only_best:
         query = query.where(Photo.is_best.is_(True))
+    # 누가 올렸는지로 거른다. '내가 올린 사진은 이미 내 폰에 있으니 남이 찍어준 것만 받는다'는
+    # 쓰임새가 실제로 많다. 사진에 누가 찍혔는지(member_id)와는 다른 축이다.
+    if uploaded_by == "others":
+        query = query.where(Photo.uploader_member_id != member.id)
+    elif uploaded_by == "me":
+        query = query.where(Photo.uploader_member_id == member.id)
     order = {
         "created_at_asc": Photo.created_at.asc(),
         "captured_at_desc": Photo.captured_at.desc().nullslast(),
@@ -444,6 +494,67 @@ def reanalyze_photo(
     db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     db.commit()
     return photo_out(photo)
+
+
+@router.post("/albums/{album_id}/reanalyze", response_model=StatusOut)
+def reanalyze_album(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: Annotated[Literal["failed", "all", "unmatched"], Query()] = "failed",
+) -> StatusOut:
+    """앨범의 사진을 일괄로 분석 대기열로 되돌린다. 사용자가 직접 눌러야 실행된다.
+
+    scope 별로 대상이 다르다. 사진 1장당 분석 호출이 다시 나가므로 기본값은 가장 좁은
+    "failed" 이고, 필요한 범위를 사용자가 고른다.
+
+      failed     분석에 실패한 사진만
+      unmatched  분석은 끝났지만 '미등록' 얼굴이 남은 사진만.
+                 기준 사진을 뒤늦게 등록한 사람이 자기 얼굴을 찾게 하는 용도다.
+      all        앨범의 모든 사진
+
+    사람이 직접 지정한 인물 연결(source=manual)과 제외 표시는 worker 가 보존한다.
+    다만 보정본 승인은 worker 의 apply_result 가 지우므로 재분석하면 초기화된다.
+    """
+    require_album_member(member, album_id)
+
+    conditions = [Photo.album_id == album_id]
+    if scope == "failed":
+        conditions.append(Photo.analysis_status == AnalysisStatus.FAILED.value)
+    elif scope == "unmatched":
+        # 비교 대상이 될 기준 얼굴이 없으면 다시 돌려도 결과가 같다.
+        if not member.reference_indexed or not member.reference_key:
+            raise ApiError(
+                409,
+                "REFERENCE_REQUIRED",
+                "기준 사진을 먼저 등록해야 얼굴을 다시 분류할 수 있습니다.",
+            )
+        conditions.append(Photo.analysis_status == AnalysisStatus.DONE.value)
+        conditions.append(Photo.unregistered_face_count > 0)
+
+    photo_ids = list(db.scalars(select(Photo.id).where(*conditions)))
+    if photo_ids:
+        edit_ids = select(Edit.id).where(Edit.photo_id.in_(photo_ids))
+        db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
+        db.execute(
+            update(Photo)
+            .where(Photo.id.in_(photo_ids))
+            .values(
+                analysis_status=AnalysisStatus.PENDING.value,
+                analysis_error=None,
+                processing_started_at=None,
+                analysis_attempts=0,
+            )
+        )
+        db.commit()
+
+    rows = db.execute(
+        select(Photo.analysis_status, func.count(Photo.id))
+        .where(Photo.album_id == album_id)
+        .group_by(Photo.analysis_status)
+    ).all()
+    counts = Counter({status: count for status, count in rows})
+    return StatusOut(**{status.value: counts[status.value] for status in AnalysisStatus})
 
 
 @router.get("/albums/{album_id}/status", response_model=StatusOut)

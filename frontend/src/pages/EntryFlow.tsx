@@ -2,13 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ApiClient } from '../lib/api'
 import { ApiError, type ActiveAlbum } from '../lib/types'
 import { ArrowIcon, CameraIcon, CheckIcon, SparkleIcon, UsersIcon } from '../components/icons'
-import { InviteCode } from '../components/InviteCode'
 
-export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum) => void; onPreview: () => void }) {
+export function Landing({ client, onComplete, onPreview }: { client: ApiClient; onComplete: (album: ActiveAlbum, resumed: boolean) => void; onPreview: () => void }) {
   const [form, setForm] = useState<'join' | 'create'>('join')
   const [name, setName] = useState('')
   const [albumName, setAlbumName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
+  const [passcode, setPasscode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -19,14 +19,20 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
       setError('입력하지 않은 항목이 있어요.')
       return
     }
+    if (passcode.trim().length < 4) {
+      setError('비밀번호를 4자 이상 입력해 주세요.')
+      return
+    }
     setLoading(true)
     try {
       const displayName = name.trim()
       const result = form === 'join'
-        ? await client.joinAlbum(inviteCode.trim(), displayName)
-        : await client.createAlbum(albumName.trim(), displayName)
+        ? await client.joinAlbum(inviteCode.trim(), displayName, passcode.trim())
+        : await client.createAlbum(albumName.trim(), displayName, passcode.trim())
       const code = 'invite_code' in result && typeof result.invite_code === 'string' ? result.invite_code : undefined
-      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName, ...(code ? { inviteCode: code } : {}) })
+      // 기준 사진까지 등록해둔 멤버로 다시 들어온 경우에만 셀카 단계를 건너뛴다.
+      const resumed = Boolean(result.rejoined && result.reference_indexed)
+      onComplete({ albumId: result.album_id, memberId: result.member_id, displayName, ...(code ? { inviteCode: code } : {}) }, resumed)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '요청을 처리하지 못했어요.')
     } finally {
@@ -51,6 +57,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
           <div className="form-heading"><span className="camera-mark"><CameraIcon /></span><div><h2>{form === 'join' ? '초대받은 앨범이 있나요?' : '새로운 여행을 시작할까요?'}</h2><p>{form === 'join' ? '친구에게 받은 초대 코드를 입력하세요.' : '여행 이름과 내 이름만 있으면 준비 끝!'}</p></div></div>
           {form === 'join' ? <label>초대 코드<input aria-label="초대 코드" value={inviteCode} onChange={(event) => setInviteCode(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="받은 코드를 그대로 붙여넣으세요" /><small>대소문자를 구분해요.</small></label> : <label>앨범 이름<input value={albumName} onChange={(event) => setAlbumName(event.target.value)} placeholder="예: 우리들의 제주" /></label>}
           <label>내 이름<input value={name} onChange={(event) => setName(event.target.value)} placeholder="앨범에 표시될 이름" /></label>
+          <label>비밀번호<input aria-label="비밀번호" type="password" value={passcode} onChange={(event) => setPasscode(event.target.value)} autoComplete={form === 'join' ? 'current-password' : 'new-password'} placeholder="4자 이상" /><small>{form === 'join' ? <>같은 이름과 비밀번호로 다시 들어오면<br />내 사진이 그대로 남아 있어요.</> : <>나중에 이 앨범에 다시 들어올 때 필요해요.<br />이름과 함께 기억해 주세요.</>}</small></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <button className="button primary full" disabled={loading}>{loading ? '잠시만요…' : form === 'join' ? '앨범 들어가기' : '앨범 만들기'}<ArrowIcon /></button>
           <button type="button" className="preview-link" onClick={onPreview}>샘플 흐름 먼저 둘러보기</button>
@@ -61,7 +68,7 @@ export function Landing({ client, onComplete, onPreview }: { client: ApiClient; 
   )
 }
 
-export function ReferenceRegistration({ client, onDone, inviteCode }: { client: ApiClient; onDone: () => void; inviteCode?: string }) {
+export function ReferenceRegistration({ client, onDone }: { client: ApiClient; onDone: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -86,15 +93,16 @@ export function ReferenceRegistration({ client, onDone, inviteCode }: { client: 
 
   return (
     <main className="onboarding page-shell">
-      {inviteCode && <InviteCode code={inviteCode} />}
       <div className="stepper"><span className="done"><CheckIcon /></span><i /><span className="active">2</span><i /><span>3</span></div>
       <div className="onboarding-heading"><span className="eyebrow">JUST ONE SELFIE</span><h1>내 사진을 찾아드릴게요</h1><p>혼자 나온 정면 사진 한 장이면 충분해요.<br />찍이 앨범 속 내 사진만 모아 보여줄게요.</p></div>
       <div className="reference-layout">
         <button className={`reference-preview ${preview ? 'has-image' : ''}`} onClick={() => inputRef.current?.click()}>{preview ? <img src={preview} alt="선택한 기준 얼굴" /> : <><span><CameraIcon /></span><strong>사진을 선택해 주세요</strong><small>카메라 또는 앨범에서 선택</small></>}{preview && <span className="change-photo">사진 바꾸기</span>}</button>
         <div className="reference-guide"><h2>이런 사진이 좋아요</h2><ul><li><CheckIcon /><span><b>정면을 바라본 얼굴</b><small>얼굴 전체가 또렷하게 보여야 해요.</small></span></li><li><CheckIcon /><span><b>혼자 나온 사진</b><small>여러 명이 함께 나온 사진은 피해주세요.</small></span></li><li><CheckIcon /><span><b>밝고 선명한 사진</b><small>모자나 선글라스는 잠시 벗어주세요.</small></span></li></ul>
-          {error && <div className="inline-error" role="alert"><b>{error.code === 'NO_FACE' ? '얼굴을 찾지 못했어요' : error.code === 'MULTIPLE_FACES' ? '얼굴이 여러 개 보여요' : '등록하지 못했어요'}</b><span>{error.message}</span></div>}
-          <input ref={inputRef} type="file" accept="image/jpeg,image/png" capture="user" hidden onChange={(event) => pick(event.target.files?.[0])} />
-          <button className="button primary full" onClick={upload} disabled={loading}>{loading ? '얼굴을 확인하고 있어요…' : file ? '이 사진으로 등록' : '사진 선택하기'}<CameraIcon /></button><p className="privacy-note">등록 사진은 앨범 속 인물을 찾는 데만 사용돼요.</p>
+          {error && <div className="inline-error" role="alert"><b>{error.code === 'NO_FACE' ? '얼굴을 찾지 못했어요' : error.code === 'MULTIPLE_FACES' ? '얼굴이 여러 개 보여요' : error.code === 'INVALID_IMAGE' ? '사진을 읽지 못했어요' : error.code === 'UNSUPPORTED_MEDIA_TYPE' ? 'JPEG·PNG·HEIC만 올릴 수 있어요' : error.code === 'FILE_TOO_LARGE' ? '사진 용량이 너무 커요' : '등록하지 못했어요'}</b><span>{error.message}</span><small>오류 코드 {error.code}</small></div>}
+          <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/heic,image/heif,.jpg,.jpeg,.png,.heic,.heif" capture="user" hidden onChange={(event) => pick(event.target.files?.[0])} />
+          <button className="button primary full" onClick={upload} disabled={loading}>{loading ? '얼굴을 확인하고 있어요…' : file ? '이 사진으로 등록' : '사진 선택하기'}<CameraIcon /></button>
+          <button type="button" className="button ghost full reference-later" onClick={onDone} disabled={loading}>사진은 나중에 등록</button>
+          <p className="privacy-note">등록 사진은 앨범 속 인물을 찾는 데만 사용돼요.</p>
         </div>
       </div>
     </main>

@@ -266,3 +266,24 @@ def test_analyze_returns_contract_keys(jpeg_bytes, local_settings, use_fake):
     assert set(result["quality"]) == {"sharpness", "brightness", "eyes_open_ratio"}
     assert result["provider"] == PROVIDER_LOCAL
     assert result["mode"] == MODE_LIVE
+
+
+# --------------------------------------------------------------------------
+# 임계값 기본값은 공급자별로 다르다
+# --------------------------------------------------------------------------
+def test_local_provider_uses_a_looser_default_similarity_threshold():
+    """90 은 Rekognition Similarity 기준이다. local 은 점수 눈금이 달라 같은 값을 쓰면
+    같은 사람인데도 '미등록'으로 떨어진다(90점 = SFace cosine 0.583)."""
+    local = load_settings({"FACE_PROVIDER": "local"})
+    rekognition = load_settings({"FACE_PROVIDER": "rekognition"})
+
+    assert local.similarity_threshold == 70.0
+    assert rekognition.similarity_threshold == 90.0
+    # 후보를 넓게 받는 규칙(임계값 - 마진)은 공급자와 무관하게 그대로다.
+    assert local.candidate_threshold == 65.0
+
+
+def test_explicit_threshold_still_wins_for_the_local_provider():
+    settings = load_settings({"FACE_PROVIDER": "local", "SIMILARITY_THRESHOLD": "88"})
+
+    assert settings.similarity_threshold == 88.0

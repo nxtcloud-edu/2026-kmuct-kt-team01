@@ -48,6 +48,8 @@ export interface PhotoQuality {
 export interface Photo {
   id: string
   album_id: string
+  /** 이 사진을 올린 멤버. 서버는 항상 보내지만 샘플 데이터에는 없을 수 있다. */
+  uploader_member_id?: string
   filename: string
   image_url: string
   thumb_url: string
@@ -75,6 +77,8 @@ export interface PhotoFilters {
   face_status?: 'unregistered' | 'uncertain' | 'no_face'
   tag?: string
   only_best?: boolean
+  /** 누가 올렸는지. 사진에 누가 찍혔는지(member_ids)와는 다른 축이다. */
+  uploaded_by?: 'me' | 'others'
   sort?: 'captured_desc' | 'best_desc'
   page?: number
 }

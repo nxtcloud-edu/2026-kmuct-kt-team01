@@ -84,6 +84,9 @@ class Member(Base):
     reference_indexed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    # 앨범 안에서 "같은 사람"임을 확인하는 비밀번호 해시 (backend/app/passcodes.py).
+    # 비밀번호가 생기기 전에 참여한 멤버는 NULL 로 남는다.
+    passcode_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     album: Mapped[Album] = relationship(back_populates="members")
     uploaded_photos: Mapped[list[Photo]] = relationship(back_populates="uploader")
@@ -143,6 +146,8 @@ class Photo(Base):
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     quality: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     burst_group_id: Mapped[str | None] = mapped_column(String(36))
+    # dHash 16진수 16자리. 내용이 거의 같은 사진을 묶는 데 쓴다 (backend/app/phash.py).
+    phash: Mapped[str | None] = mapped_column(String(16))
     best_score: Mapped[float | None] = mapped_column(Float)
     is_best: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 

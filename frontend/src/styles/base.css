@@ -61,3 +61,5 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(65, 105, 225
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.leave-album { min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.leave-album:hover { color: var(--coral); border-color: #ffc1b8; background: #fff7f5; }

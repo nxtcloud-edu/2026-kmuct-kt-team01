@@ -13,7 +13,7 @@
 환경변수:
   FACE_PROVIDER        rekognition | local | mock   (기본 mock)
   AWS_REGION           기본 us-east-1 (rekognition 일 때만 씀)
-  SIMILARITY_THRESHOLD 기본 90.0
+  SIMILARITY_THRESHOLD 기본 90.0 (FACE_PROVIDER=local 은 70.0 — 점수 눈금이 다르다)
   CANDIDATE_MARGIN     기본 5.0
   MOCK_MANIFEST_PATH   mock 정답 manifest 경로 (기본 backend/samples/mock_manifest.json)
 
@@ -123,12 +123,26 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     return Settings(
         provider=provider,
         region=(env.get("AWS_REGION") or "us-east-1").strip(),
-        similarity_threshold=_float_env(env, "SIMILARITY_THRESHOLD", 90.0),
+        similarity_threshold=_float_env(
+            env, "SIMILARITY_THRESHOLD", _default_similarity_threshold(provider)
+        ),
         candidate_margin=_float_env(env, "CANDIDATE_MARGIN", 5.0),
         manifest_path=Path(manifest) if manifest else _DEFAULT_MANIFEST,
         mock_synthetic_match=(env.get("MOCK_SYNTHETIC_MATCH", "1").strip().lower()
                               not in {"0", "false", "no"}),
     )
+
+
+def _default_similarity_threshold(provider: str) -> float:
+    """임계값 90 은 Rekognition Similarity 기준이다. 로컬 모델은 눈금이 다르다.
+
+    local 은 SFace cosine 을 로지스틱으로 0~100 에 옮겨 놓은 값이라(local_vision.py),
+    90 점은 cosine 0.583 에 해당한다. SFace 의 권장 판정 경계 0.363 보다 훨씬 엄격해서
+    같은 사람인데도 조명·각도 때문에 '미등록'으로 떨어지는 일이 잦았다.
+    70 점은 cosine 0.448 로, 권장 경계보다는 보수적이면서 실제 사진을 놓치지 않는 지점이다.
+    SIMILARITY_THRESHOLD 를 명시하면 그 값이 우선한다.
+    """
+    return 70.0 if provider == PROVIDER_LOCAL else 90.0
 
 
 def _float_env(env: Mapping[str, str], key: str, default: float) -> float:
@@ -406,10 +420,18 @@ def analyze(
     members = list(members or [])
 
     if settings.provider == PROVIDER_MOCK:
-        return _analyze_mock(image_bytes, album_id, members, settings)
-    if settings.provider == PROVIDER_LOCAL:
-        return _analyze_local(image_bytes, album_id, members, settings, load_reference)
-    return _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
+        result = _analyze_mock(image_bytes, album_id, members, settings)
+    elif settings.provider == PROVIDER_LOCAL:
+        result = _analyze_local(image_bytes, album_id, members, settings, load_reference)
+    else:
+        result = _analyze_rekognition(image_bytes, album_id, members, settings, load_reference)
+
+    # Scene and general quality classification can use an independent
+    # OpenAI-compatible multimodal gateway while face identity remains with
+    # FACE_PROVIDER. The default is off, so existing deployments are unchanged.
+    from .vision_gateway import enrich_analysis
+
+    return enrich_analysis(result, image_bytes)
 
 
 def _analyze_rekognition(

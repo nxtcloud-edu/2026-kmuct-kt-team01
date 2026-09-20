@@ -18,15 +18,29 @@ export interface ReferenceResult {
   face_count: number
 }
 
+/** failed: 분석 실패분만 · unmatched: 미등록 얼굴이 남은 사진만 · all: 전체 */
+export type ReanalyzeScope = 'failed' | 'unmatched' | 'all'
+
+export interface JoinResult {
+  album_id: string
+  member_id: string
+  invite_code?: string
+  /** 기존 멤버로 다시 들어왔는지. 기준 사진 단계를 건너뛸지 판단하는 데 쓴다. */
+  rejoined?: boolean
+  reference_indexed?: boolean
+}
+
 export interface ApiClient {
-  createAlbum(name: string, displayName: string): Promise<{ album_id: string; member_id: string; invite_code: string }>
-  joinAlbum(inviteCode: string, displayName: string): Promise<{ album_id: string; member_id: string }>
+  createAlbum(name: string, displayName: string, passcode: string): Promise<JoinResult & { invite_code: string }>
+  joinAlbum(inviteCode: string, displayName: string, passcode: string): Promise<JoinResult>
   getAlbum(id: string): Promise<Album>
   uploadReference(file: File): Promise<ReferenceResult>
   listPhotos(albumId: string, filters: PhotoFilters): Promise<PageResult<Photo>>
   getPhoto(id: string): Promise<Photo>
   updatePhotoMembers(id: string, members: MemberChange[]): Promise<Photo>
   reanalyzePhoto(id: string): Promise<void>
+  /** 앨범 사진을 일괄로 다시 분석한다. 사용자가 직접 눌러야 실행된다. */
+  reanalyzeAlbum(albumId: string, scope?: ReanalyzeScope): Promise<AnalysisCounts>
   getStatus(albumId: string): Promise<AnalysisCounts>
   getCoverage(albumId: string): Promise<Coverage>
   uploadPhotos(albumId: string, files: File[]): Promise<UploadBatchResponse>
@@ -85,15 +99,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export class HttpApiClient implements ApiClient {
-  createAlbum(name: string, displayName: string) {
-    return request<{ album_id: string; member_id: string; invite_code: string }>('/albums', {
-      method: 'POST', body: JSON.stringify({ name, display_name: displayName }),
+  createAlbum(name: string, displayName: string, passcode: string) {
+    return request<JoinResult & { invite_code: string }>('/albums', {
+      method: 'POST', body: JSON.stringify({ name, display_name: displayName, passcode }),
     })
   }
 
-  joinAlbum(inviteCode: string, displayName: string) {
-    return request<{ album_id: string; member_id: string }>('/albums/join', {
-      method: 'POST', body: JSON.stringify({ invite_code: inviteCode, display_name: displayName }),
+  joinAlbum(inviteCode: string, displayName: string, passcode: string) {
+    return request<JoinResult>('/albums/join', {
+      method: 'POST', body: JSON.stringify({ invite_code: inviteCode, display_name: displayName, passcode }),
     })
   }
 
@@ -112,6 +126,7 @@ export class HttpApiClient implements ApiClient {
     if (filters.face_status) params.set('face_status', filters.face_status)
     if (filters.tag) params.set('tag', filters.tag)
     if (filters.only_best) params.set('only_best', 'true')
+    if (filters.uploaded_by) params.set('uploaded_by', filters.uploaded_by)
     if (filters.sort) params.set('sort', {
       captured_desc: 'captured_at_desc',
       best_desc: 'best_score_desc',
@@ -133,6 +148,9 @@ export class HttpApiClient implements ApiClient {
   }
 
   reanalyzePhoto(id: string) { return request<void>(`/photos/${id}/reanalyze`, { method: 'POST' }) }
+  reanalyzeAlbum(albumId: string, scope: ReanalyzeScope = 'failed') {
+    return request<AnalysisCounts>(`/albums/${albumId}/reanalyze?scope=${scope}`, { method: 'POST' })
+  }
   getStatus(albumId: string) { return request<AnalysisCounts>(`/albums/${albumId}/status`) }
   getCoverage(albumId: string) { return request<Coverage>(`/albums/${albumId}/coverage`) }
 
@@ -203,6 +221,8 @@ function makePhotos(): Photo[] {
     return {
       id: `p-${index + 1}`,
       album_id: 'album-demo',
+      // 샘플에서도 올린이 필터가 동작하도록 멤버들에게 돌아가며 배정한다.
+      uploader_member_id: members[index % members.length]?.id ?? 'm-1',
       filename: `jeju-day-${String(index + 1).padStart(2, '0')}.jpg`,
       image_url: url,
       thumb_url: url,
@@ -232,7 +252,7 @@ export class MockApiClient implements ApiClient {
   private photos = makePhotos()
 
   async createAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1', invite_code: 'JEJU26' } }
-  async joinAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1' } }
+  async joinAlbum() { await delay(); return { album_id: 'album-demo', member_id: 'm-1', rejoined: false, reference_indexed: false } }
 
   async getAlbum(): Promise<Album> {
     await delay()
@@ -256,6 +276,8 @@ export class MockApiClient implements ApiClient {
     if (filters.face_status === 'no_face') result = result.filter((photo) => photo.shot_type === 'no_face')
     if (filters.tag) result = result.filter((photo) => photo.tags.includes(filters.tag!))
     if (filters.only_best) result = result.filter((photo) => photo.is_best)
+    if (filters.uploaded_by === 'others') result = result.filter((photo) => photo.uploader_member_id !== 'm-1')
+    if (filters.uploaded_by === 'me') result = result.filter((photo) => photo.uploader_member_id === 'm-1')
     if (filters.sort === 'best_desc') result.sort((a, b) => (b.best_score ?? 0) - (a.best_score ?? 0))
     const page = filters.page ?? 1
     const pageSize = 8
@@ -292,6 +314,16 @@ export class MockApiClient implements ApiClient {
   async getStatus(): Promise<AnalysisCounts> {
     await delay(80)
     return this.photos.reduce<AnalysisCounts>((counts, photo) => ({ ...counts, [photo.analysis_status]: counts[photo.analysis_status] + 1 }), { pending: 0, processing: 0, done: 0, failed: 0 })
+  }
+
+  async reanalyzeAlbum(_albumId: string, scope: ReanalyzeScope = 'failed'): Promise<AnalysisCounts> {
+    this.photos
+      .filter((photo) => scope === 'all'
+        || (scope === 'failed' && photo.analysis_status === 'failed')
+        || (scope === 'unmatched' && photo.analysis_status === 'done' && (photo.unregistered_face_count ?? 0) > 0))
+      .forEach((photo) => { photo.analysis_status = 'processing'; photo.analysis_error = null })
+    await delay(350)
+    return this.getStatus()
   }
 
   async getCoverage(): Promise<Coverage> {

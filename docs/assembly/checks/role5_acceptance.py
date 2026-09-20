@@ -25,9 +25,11 @@ def session(tmp_path):
     ))
     Base.metadata.create_all(app.state.engine)
     with TestClient(app) as owner, TestClient(app) as guest:
-        album = owner.post('/api/albums', json={'name': 'fixture', 'display_name': 'owner'}).json()
+        album = owner.post('/api/albums', json={
+            'name': 'fixture', 'display_name': 'owner', 'passcode': 'owner-pass'}).json()
         joined = guest.post('/api/albums/join', json={
-            'invite_code': album['invite_code'], 'display_name': 'guest'}).json()
+            'invite_code': album['invite_code'], 'display_name': 'guest',
+            'passcode': 'guest-pass'}).json()
         yield app, owner, guest, album, joined
     app.state.engine.dispose()
 
