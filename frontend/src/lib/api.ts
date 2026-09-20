@@ -27,6 +27,7 @@ export interface ApiClient {
   getPhoto(id: string): Promise<Photo>
   updatePhotoMembers(id: string, members: MemberChange[]): Promise<Photo>
   reanalyzePhoto(id: string): Promise<void>
+  reanalyzeAlbum(albumId: string, scope?: 'failed' | 'all'): Promise<AnalysisCounts>
   getStatus(albumId: string): Promise<AnalysisCounts>
   getCoverage(albumId: string): Promise<Coverage>
   uploadPhotos(albumId: string, files: File[]): Promise<UploadBatchResponse>
@@ -133,6 +134,7 @@ export class HttpApiClient implements ApiClient {
   }
 
   reanalyzePhoto(id: string) { return request<void>(`/photos/${id}/reanalyze`, { method: 'POST' }) }
+  reanalyzeAlbum(albumId: string, scope: 'failed' | 'all' = 'failed') { return request<AnalysisCounts>(`/albums/${albumId}/reanalyze?scope=${scope}`, { method: 'POST' }) }
   getStatus(albumId: string) { return request<AnalysisCounts>(`/albums/${albumId}/status`) }
   getCoverage(albumId: string) { return request<Coverage>(`/albums/${albumId}/coverage`) }
 
@@ -283,6 +285,14 @@ export class MockApiClient implements ApiClient {
     photo.analysis_status = 'processing'
     photo.analysis_error = null
     await delay(350)
+  }
+
+  async reanalyzeAlbum(_albumId: string, scope: 'failed' | 'all' = 'failed'): Promise<AnalysisCounts> {
+    this.photos
+      .filter((photo) => scope === 'all' || photo.analysis_status === 'failed')
+      .forEach((photo) => { photo.analysis_status = 'processing'; photo.analysis_error = null })
+    await delay(350)
+    return this.getStatus()
   }
 
   async getStatus(): Promise<AnalysisCounts> {

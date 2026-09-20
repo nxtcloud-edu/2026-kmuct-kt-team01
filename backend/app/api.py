@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.app.analysis_contract import AnalysisUnavailable, validate_reference
@@ -444,6 +444,56 @@ def reanalyze_photo(
     db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
     db.commit()
     return photo_out(photo)
+
+
+@router.post("/albums/{album_id}/reanalyze", response_model=StatusOut)
+def reanalyze_album(
+    album_id: str,
+    member: Annotated[Member, Depends(current_member)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: Annotated[Literal["failed", "all"], Query()] = "failed",
+) -> StatusOut:
+    """앨범의 사진을 일괄 재분석 대기열로 되돌린다.
+
+    scope="failed" 는 실패한 사진만, "all" 은 완료된 사진까지 전부 다시 돌린다.
+    사람이 직접 지정한 인물 연결(source=manual)과 제외 표시는 worker 가 보존한다.
+    """
+    require_album_member(member, album_id)
+
+    targets = [AnalysisStatus.FAILED.value]
+    if scope == "all":
+        targets = [status.value for status in AnalysisStatus]
+
+    photo_ids = list(
+        db.scalars(
+            select(Photo.id).where(
+                Photo.album_id == album_id,
+                Photo.analysis_status.in_(targets),
+            )
+        )
+    )
+    if photo_ids:
+        edit_ids = select(Edit.id).where(Edit.photo_id.in_(photo_ids))
+        db.execute(delete(Approval).where(Approval.edit_id.in_(edit_ids)))
+        db.execute(
+            update(Photo)
+            .where(Photo.id.in_(photo_ids))
+            .values(
+                analysis_status=AnalysisStatus.PENDING.value,
+                analysis_error=None,
+                processing_started_at=None,
+                analysis_attempts=0,
+            )
+        )
+        db.commit()
+
+    rows = db.execute(
+        select(Photo.analysis_status, func.count(Photo.id))
+        .where(Photo.album_id == album_id)
+        .group_by(Photo.analysis_status)
+    ).all()
+    counts = Counter({status: count for status, count in rows})
+    return StatusOut(**{status.value: counts[status.value] for status in AnalysisStatus})
 
 
 @router.get("/albums/{album_id}/status", response_model=StatusOut)

@@ -9,10 +9,10 @@ type GalleryTab = 'all' | 'mine' | 'group' | 'best'
 type FaceStatus = '' | 'unregistered' | 'uncertain' | 'no_face'
 type GridItem = Photo | Photo[]
 
-function ProgressBanner({ counts }: { counts: AnalysisCounts }) {
+function ProgressBanner({ counts, onReanalyze }: { counts: AnalysisCounts; onReanalyze?: (scope: 'failed' | 'all') => void }) {
   const total = counts.pending + counts.processing + counts.done + counts.failed
   const percent = total ? Math.round((counts.done / total) * 100) : 0
-  return <section className="progress-banner"><span className="progress-icon"><SparkleIcon /></span><div className="progress-content"><div><b>{counts.pending + counts.processing > 0 ? '사진을 분석하고 있어요' : '사진 분석이 끝났어요'}</b><span>{counts.done}/{total} 완료{counts.failed > 0 && ` · ${counts.failed}장 재시도 필요`}</span></div><div className="progress-track"><i style={{ width: `${percent}%` }} /></div></div><strong>{percent}%</strong></section>
+  return <section className="progress-banner"><span className="progress-icon"><SparkleIcon /></span><div className="progress-content"><div><b>{counts.pending + counts.processing > 0 ? '사진을 분석하고 있어요' : '사진 분석이 끝났어요'}</b><span>{counts.done}/{total} 완료{counts.failed > 0 && ` · ${counts.failed}장 재시도 필요`}</span></div><div className="progress-track"><i style={{ width: `${percent}%` }} /></div></div><strong>{percent}%</strong>{onReanalyze && <span className="progress-actions">{counts.failed > 0 && <button className="button secondary" onClick={() => onReanalyze('failed')}>실패 {counts.failed}장 다시 분석</button>}<button className="button ghost" onClick={() => onReanalyze('all')}>전체 다시 분석</button></span>}</section>
 }
 
 function peopleLabel(photo: Photo): string {
@@ -118,7 +118,7 @@ export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage }
     <section className="album-heading"><div><span className="eyebrow">SHARED ALBUM · {album?.invite_code ?? '······'}</span><h1>{album?.name ?? '앨범'}</h1><p>{album?.members.length ?? 0}명이 함께한 여행 · 사진 {album?.photo_count ?? 0}장</p></div><div className="album-actions"><button className="button ghost" onClick={onCoverage}>누락 현황</button><button className="button primary" onClick={() => uploadRef.current?.click()} disabled={uploading}><UploadIcon />{uploading ? '올리는 중…' : '사진 올리기'}</button><input ref={uploadRef} type="file" accept="image/jpeg,image/png" multiple hidden onChange={(event) => void upload(event.target.files)} /></div></section>
     {uploadReport && <div className={`upload-report ${uploadReport.results.some((result) => !result.ok) ? 'has-errors' : ''}`} role="status"><b>{uploadReport.results.filter((result) => result.ok).length}장 업로드 완료</b>{uploadReport.results.some((result) => !result.ok) && <span>실패: {uploadReport.results.filter((result) => !result.ok).map((result) => result.filename).join(', ')}</span>}<button onClick={() => setUploadReport(null)} aria-label="업로드 결과 닫기">×</button></div>}
     {album && <InviteCode key={album.id} code={album.invite_code} />}
-    <ProgressBanner counts={counts} />
+    <ProgressBanner counts={counts} onReanalyze={(scope) => { if (scope === 'all' && !window.confirm('앨범의 모든 사진을 다시 분석할까요? 직접 지정한 인물은 유지됩니다.')) return; void client.reanalyzeAlbum(albumId, scope).then(setCounts).then(() => load(false)).catch(setError) }} />
     {photos.some((photo) => photo.mode === 'mock') && <div className="mock-analysis-notice" role="note"><b>현재 로컬에서는 샘플 분석 결과를 표시하고 있어요.</b><span>얼굴 이름과 태그는 합성 결과입니다. 실제 얼굴별 분류는 AWS Rekognition 연결 후 정확해집니다.</span></div>}
     <div className="gallery-toolbar"><div className="gallery-tabs" role="tablist">{([['all', '전체'], ['mine', '내 사진'], ['group', '단체샷'], ['best', '베스트컷']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? 'active' : ''} onClick={() => changeTab(key)}>{key === 'best' && <SparkleIcon />}{label}</button>)}</div><button className={`select-mode ${selecting ? 'active' : ''}`} onClick={() => { setSelecting(!selecting); setSelected([]) }}>{selecting ? '선택 취소' : '사진 선택'}</button></div>
     <section className="filter-panel" aria-label="사진 분류 필터">
