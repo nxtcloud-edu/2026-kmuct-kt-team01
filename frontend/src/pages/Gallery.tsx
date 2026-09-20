@@ -5,8 +5,6 @@ import { EmptyState, ErrorState, Spinner } from '../components/AsyncState'
 import { CheckIcon, DownloadIcon, SparkleIcon, UploadIcon } from '../components/icons'
 
 type GalleryTab = 'all' | 'mine' | 'group' | 'best'
-const albumId = 'album-demo'
-const currentMemberId = 'm-1'
 
 function ProgressBanner({ counts }: { counts: AnalysisCounts }) {
   const total = counts.pending + counts.processing + counts.done + counts.failed
@@ -18,7 +16,7 @@ function PhotoCard({ photo, selectable, selected, onSelect, onOpen }: { photo: P
   return <button className={`photo-card ${selected ? 'selected' : ''}`} onClick={selectable ? onSelect : onOpen} aria-label={`${photo.filename}${selected ? ', 선택됨' : ''}`}><img src={photo.thumb_url} alt="" loading="lazy" /><span className="photo-shade" />{selectable && <span className="select-check">{selected && <CheckIcon />}</span>}{photo.is_best && <span className="best-badge"><SparkleIcon />BEST</span>}{photo.analysis_status !== 'done' && <span className={`analysis-badge ${photo.analysis_status}`}>{photo.analysis_status === 'failed' ? '분석 실패' : '분석 중'}</span>}<span className="photo-meta"><span>{photo.members.slice(0, 3).map((member) => member.display_name).join(' · ') || '인물 없음'}</span><b>{photo.best_score ? `${Math.round(photo.best_score)}점` : ''}</b></span></button>
 }
 
-export function Gallery({ client, onOpen, onCoverage }: { client: ApiClient; onOpen: (id: string) => void; onCoverage: () => void }) {
+export function Gallery({ client, albumId, currentMemberId, onOpen, onCoverage }: { client: ApiClient; albumId: string; currentMemberId: string; onOpen: (id: string) => void; onCoverage: () => void }) {
   const uploadRef = useRef<HTMLInputElement>(null)
   const [album, setAlbum] = useState<Album | null>(null)
   const [photos, setPhotos] = useState<Photo[]>([])
@@ -36,15 +34,15 @@ export function Gallery({ client, onOpen, onCoverage }: { client: ApiClient; onO
   const [uploading, setUploading] = useState(false)
   const [uploadReport, setUploadReport] = useState<UploadBatchResponse | null>(null)
 
-  const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...memberIds])] : memberIds, shot_type: tab === 'group' ? 'group' : undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberIds, tag])
+  const filters = useMemo<PhotoFilters>(() => ({ page, member_ids: tab === 'mine' ? [...new Set([currentMemberId, ...memberIds])] : memberIds, shot_type: tab === 'group' ? 'group' : undefined, only_best: tab === 'best' || undefined, sort: tab === 'best' ? 'best_desc' : 'captured_desc', tag: tag || undefined }), [page, tab, memberIds, tag, currentMemberId])
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try { const [albumResult, photoResult, statusResult] = await Promise.all([client.getAlbum(albumId), client.listPhotos(albumId, filters), client.getStatus(albumId)]); setAlbum(albumResult); setPhotos(photoResult.items); setTotal(photoResult.total); setTotalPages(photoResult.total_pages); setCounts(statusResult) }
     catch (caught) { setError(caught) } finally { setLoading(false) }
-  }, [client, filters])
+  }, [client, albumId, filters])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => { const timer = window.setInterval(() => { void client.getStatus(albumId).then(setCounts).catch(() => undefined) }, 2000); return () => window.clearInterval(timer) }, [client])
+  useEffect(() => { const timer = window.setInterval(() => { void client.getStatus(albumId).then(setCounts).catch(() => undefined) }, 2000); return () => window.clearInterval(timer) }, [client, albumId])
 
   function changeTab(next: GalleryTab) { setTab(next); setPage(1); setSelected([]) }
   function toggleMember(id: string) { setMemberIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); setPage(1) }

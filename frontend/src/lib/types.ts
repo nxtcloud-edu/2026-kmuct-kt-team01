@@ -2,6 +2,12 @@ export type AnalysisStatus = 'pending' | 'processing' | 'done' | 'failed'
 export type ShotType = 'unknown' | 'no_face' | 'solo' | 'group'
 export type DataMode = 'mock' | 'api'
 
+export interface ActiveAlbum {
+  albumId: string
+  memberId: string
+  displayName: string
+}
+
 export interface Member {
   id: string
   display_name: string
