@@ -1,15 +1,27 @@
+import { useState } from 'react'
+import { createApiClient, getDataMode } from './lib/api'
+import { Landing, ReferenceRegistration } from './pages/EntryFlow'
+import './styles/entry.css'
+
+type Screen = 'landing' | 'reference'
+const mode = getDataMode()
+const api = createApiClient(mode)
+
+function Logo() {
+  return <button className="logo" onClick={() => window.location.assign(window.location.pathname)} aria-label="찍 홈"><span>찍</span><b>ZZIK</b></button>
+}
+
 export default function App() {
+  const [screen, setScreen] = useState<Screen>('landing')
+
   return (
     <div className="app">
       <header className="app-header">
-        <span className="logo-mark">찍</span>
-        <strong>ZZIK</strong>
+        <Logo />
+        {mode === 'mock' && <span className="sample-badge">샘플 데이터</span>}
       </header>
-      <main className="scaffold-page">
-        <span>TRAVEL PHOTO, TOGETHER</span>
-        <h1>여행의 모든 순간을<br />모두의 최애컷으로.</h1>
-        <p>ZZIK 프론트엔드를 준비하고 있어요.</p>
-      </main>
+      {screen === 'landing' && <Landing client={api} onComplete={() => setScreen('reference')} onPreview={() => setScreen('reference')} />}
+      {screen === 'reference' && <ReferenceRegistration client={api} onDone={() => setScreen('landing')} />}
     </div>
   )
 }
