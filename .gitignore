@@ -1,0 +1,50 @@
+# Secrets and runtime configuration
+.env
+.env.*
+!.env.example
+runtime.env
+*.pem
+*.key
+*.p12
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+playwright-report/
+test-results/
+
+# Build and package output
+build/
+*.egg-info/
+
+# Local data and backups
+*.db
+*.sqlite*
+*.dump
+*.backup
+backups/
+uploads/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
