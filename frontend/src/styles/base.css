@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap');
+
+:root {
+  font-family: 'Noto Sans KR', system-ui, sans-serif;
+  color: #172039;
+  background: #f7f9fc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --navy: #172039;
+  --blue: #4169e1;
+  --blue-dark: #3152bd;
+  --blue-pale: #eef2ff;
+  --coral: #ff735f;
+  --coral-dark: #ec5b48;
+  --coral-pale: #fff0ed;
+  --line: #e5e9f2;
+  --muted: #737c91;
+  --white: #fff;
+  --shadow: 0 18px 60px rgba(34, 48, 91, .1);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible { outline: 3px solid rgba(65, 105, 225, .28); outline-offset: 2px; }
+.app { min-height: 100vh; }
+.page-shell { width: min(1180px, calc(100% - 48px)); margin: 0 auto; }
+.app-header { height: 76px; padding: 0 max(24px, calc((100vw - 1180px) / 2)); display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,.9); border-bottom: 1px solid rgba(229,233,242,.8); position: sticky; top: 0; z-index: 30; backdrop-filter: blur(14px); }
+.logo { display: flex; align-items: baseline; gap: 7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.logo span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 13px 13px 13px 4px; background: var(--coral); color: white; font-weight: 800; font-size: 22px; box-shadow: 0 6px 18px rgba(255,115,95,.26); }
+.logo b { font: 700 20px/1 'DM Sans', sans-serif; letter-spacing: .08em; }
+.sample-badge { padding: 5px 10px; border-radius: 999px; background: #fff6d7; color: #8c6a00; font-size: 11px; font-weight: 700; }
+.desktop-nav { align-self: stretch; display: flex; gap: 22px; }.desktop-nav button { display: flex; align-items: center; gap: 7px; padding: 0 8px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); cursor: pointer; }.desktop-nav button.active { color: var(--blue); border-bottom-color: var(--blue); font-weight: 700; }
+.header-actions { display: flex; align-items: center; gap: 14px; }.profile-chip { display: flex; align-items: center; gap: 7px; padding: 5px 10px 5px 5px; background: #f3f5f9; border-radius: 999px; font-size: 13px; font-weight: 700; }.avatar { width: 30px; height: 30px; display: inline-grid; place-items: center; border-radius: 50%; font-style: normal; font-size: 12px; font-weight: 800; background: #e1e7f7; color: #3f527c; flex: none; }.avatar.coral, .color-0 { background: #ffd8d2; color: #b43c2d; }.color-1 { background: #dce7ff; color: #355dc2; }.color-2 { background: #d8f3e6; color: #167954; }.color-3 { background: #f0dfff; color: #7750a2; }
+.eyebrow { font: 700 11px/1.5 'DM Sans', sans-serif; letter-spacing: .13em; color: var(--blue); }
+.button { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: 12px; border: 0; cursor: pointer; font-weight: 700; transition: transform .2s, background .2s, box-shadow .2s; }
+.button:hover:not(:disabled) { transform: translateY(-1px); }
+.button:disabled { opacity: .6; cursor: wait; }
+.button.primary { color: white; background: var(--blue); box-shadow: 0 8px 20px rgba(65,105,225,.2); }
+.button.primary:hover:not(:disabled) { background: var(--blue-dark); }
+.button.secondary, .button.ghost { border: 1px solid var(--line); background: white; }
+.button.light { background: white; color: var(--blue-dark); }
+.button.full { width: 100%; margin-top: 24px; }
+.button svg { width: 18px; }
+.preview-link { display: block; margin: 17px auto 0; padding: 2px 4px; border: 0; border-bottom: 1px solid #b7bfce; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+
+@media (max-width: 800px) {
+  :root { --blue: #ff735f; --blue-dark: #ec5b48; --blue-pale: #fff0ed; }
+  .page-shell { width: min(100% - 32px, 620px); }
+  .app-header { height: 64px; padding: 0 16px; }
+  .logo span { width: 34px; height: 34px; font-size: 19px; }
+  .logo b { font-size: 17px; }
+  .desktop-nav { display: none; }.profile-chip > span:last-child { display: none; }.profile-chip { padding-right: 5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

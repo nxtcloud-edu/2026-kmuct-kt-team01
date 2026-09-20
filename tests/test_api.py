@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import zipfile
 
 from fastapi.testclient import TestClient
@@ -9,12 +10,18 @@ from sqlalchemy import func, select
 
 from backend.app.config import Settings
 from backend.app.main import create_app
-from backend.app.models import Approval, Base, Edit, Member, Photo
+from backend.app.models import Approval, Base, Edit, Member, Photo, PhotoMember
 
 
 def jpeg_bytes() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (32, 24), "#7c3aed").save(output, format="JPEG")
+    return output.getvalue()
+
+
+def png_bytes(width: int = 2600, height: int = 25) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGBA", (width, height), (124, 58, 237, 128)).save(output, format="PNG")
     return output.getvalue()
 
 
@@ -34,6 +41,7 @@ def create_album(client: TestClient, name: str = "부산 여행") -> dict[str, s
         "/api/albums", json={"name": name, "display_name": "민지"}
     )
     assert response.status_code == 201
+    assert response.json()["member_id"]
     return response.json()
 
 
@@ -83,6 +91,33 @@ def test_multi_upload_keeps_success_when_another_file_fails(tmp_path) -> None:
     assert listing.json()["items"][0]["mode"] is None
 
 
+def test_upload_preserves_png_original_bytes_and_metadata_across_restart(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+    original = png_bytes()
+
+    uploaded = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("wide.png", original, "image/png"))],
+    ).json()["results"][0]["photo"]
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, uploaded["id"])
+        assert photo.mime == "image/png"
+        assert (photo.width, photo.height, photo.byte_size) == (2600, 25, len(original))
+        assert photo.s3_key.endswith("/original.png")
+        assert app.state.storage.get(photo.s3_key) == original
+        assert app.state.storage.get(photo.thumb_key) != original
+
+    restarted = TestClient(create_app(app.state.settings))
+    restarted.cookies.update(client.cookies)
+    downloaded = restarted.get(f"/api/photos/{uploaded['id']}/download")
+    assert downloaded.status_code == 200
+    assert downloaded.headers["content-type"] == "image/png"
+    assert downloaded.content == original
+    assert hashlib.sha256(downloaded.content).hexdigest() == hashlib.sha256(original).hexdigest()
+
+
 def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
     owner, app = make_client(tmp_path)
     album = create_album(owner)
@@ -92,6 +127,7 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
         json={"invite_code": album["invite_code"], "display_name": "서준"},
     )
     assert joined.status_code == 200
+    assert joined.json()["member_id"]
 
     album_view = owner.get(f"/api/albums/{album['album_id']}").json()
     owner_id, invitee_id = [item["id"] for item in album_view["members"]]
@@ -122,6 +158,7 @@ def test_manual_member_change_invalidates_approvals(tmp_path) -> None:
     assert changed.json()["members"] == [
         {
             "member_id": invitee_id,
+            "display_name": "서준",
             "similarity": None,
             "source": "manual",
             "excluded": False,
@@ -169,6 +206,115 @@ def test_selected_originals_download_as_zip(tmp_path) -> None:
         assert archive.namelist() == ["same.jpg", "2-same.jpg"]
 
 
+def test_role5_edit_approval_and_final_zip_preserve_original(tmp_path) -> None:
+    owner, app = make_client(tmp_path)
+    album = create_album(owner)
+    invitee = TestClient(app)
+    assert invitee.post(
+        "/api/albums/join",
+        json={"invite_code": album["invite_code"], "display_name": "서준"},
+    ).status_code == 200
+    members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
+    owner_id, invitee_id = [item["id"] for item in members]
+    uploaded = owner.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("group.jpg", jpeg_bytes(), "image/jpeg"))],
+    ).json()
+    photo_id = uploaded["results"][0]["photo"]["id"]
+
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        original = app.state.storage.get(photo.s3_key)
+        original_hash = hashlib.sha256(original).hexdigest()
+        photo.analysis_status = "done"
+        photo.face_count = 2
+        photo.shot_type = "group"
+        db.add_all(
+            [
+                PhotoMember(photo_id=photo_id, member_id=owner_id, similarity=99, source="auto"),
+                PhotoMember(photo_id=photo_id, member_id=invitee_id, similarity=98, source="auto"),
+            ]
+        )
+        db.commit()
+
+    created = owner.post(
+        f"/api/photos/{photo_id}/edits",
+        json={"brightness": 1.2, "saturation": 0.8, "parent_id": None},
+    )
+    assert created.status_code == 201
+    edit_id = created.json()["id"]
+    assert owner.post(f"/api/edits/{edit_id}/approve").json()["is_final"] is False
+    approved = invitee.post(f"/api/edits/{edit_id}/approve")
+    assert approved.status_code == 200
+    assert approved.json()["is_final"] is True
+
+    preview = owner.get(approved.json()["preview_url"])
+    download = owner.get(approved.json()["download_url"])
+    assert preview.status_code == download.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+    assert download.headers["content-disposition"] == 'attachment; filename="group-edit-1.jpg"'
+    assert preview.content == download.content
+
+    final_zip = owner.post(
+        f"/api/albums/{album['album_id']}/download",
+        json={"photo_ids": [photo_id], "version": "final"},
+    )
+    assert final_zip.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(final_zip.content)) as archive:
+        assert archive.namelist() == ["group-edit-1.jpg"]
+        assert archive.read("group-edit-1.jpg") != original
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        assert hashlib.sha256(app.state.storage.get(photo.s3_key)).hexdigest() == original_hash
+
+
+def test_zero_confirmed_members_use_uploader_as_only_approver(tmp_path) -> None:
+    owner, app = make_client(tmp_path)
+    album = create_album(owner)
+    uploaded = owner.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("unknown.jpg", jpeg_bytes(), "image/jpeg"))],
+    ).json()
+    photo_id = uploaded["results"][0]["photo"]["id"]
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "done"
+        photo.face_count = 1
+        photo.shot_type = "solo"
+        db.commit()
+    edit = owner.post(
+        f"/api/photos/{photo_id}/edits",
+        json={"brightness": 1.0, "saturation": 1.0},
+    ).json()
+    assert edit["required_count"] == 1
+    assert edit["approval_blocked_reason"] is None
+    assert owner.post(f"/api/edits/{edit['id']}/approve").json()["is_final"] is True
+
+
+def test_reanalysis_invalidates_edit_approvals(tmp_path) -> None:
+    owner, app = make_client(tmp_path)
+    album = create_album(owner)
+    uploaded = owner.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("solo.jpg", jpeg_bytes(), "image/jpeg"))],
+    ).json()
+    photo_id = uploaded["results"][0]["photo"]["id"]
+    with app.state.session_factory() as db:
+        photo = db.get(Photo, photo_id)
+        photo.analysis_status = "done"
+        photo.face_count = 0
+        photo.shot_type = "no_face"
+        db.commit()
+    edit = owner.post(
+        f"/api/photos/{photo_id}/edits",
+        json={"brightness": 1.0, "saturation": 1.0},
+    ).json()
+    assert owner.post(f"/api/edits/{edit['id']}/approve").json()["is_final"] is True
+    assert owner.post(f"/api/photos/{photo_id}/reanalyze").status_code == 200
+    with app.state.session_factory() as db:
+        assert db.scalar(select(func.count(Approval.edit_id))) == 0
+
+
 def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
     _, app = make_client(tmp_path)
     operations = {
@@ -189,6 +335,7 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("GET", "/api/albums/{album_id}/status"),
         ("GET", "/api/albums/{album_id}/coverage"),
         ("GET", "/api/photos/{photo_id}/download"),
+        ("GET", "/api/photos/{photo_id}/thumbnail"),
         ("POST", "/api/albums/{album_id}/download"),
         ("POST", "/api/photos/{photo_id}/edits"),
         ("GET", "/api/photos/{photo_id}/edits"),
@@ -196,3 +343,47 @@ def test_openapi_exposes_the_confirmed_contract(tmp_path) -> None:
         ("DELETE", "/api/edits/{edit_id}/approve"),
         ("GET", "/api/health/ready"),
     }.issubset(operations)
+
+
+def test_photo_response_urls_names_pages_and_multi_member_and_filter(tmp_path) -> None:
+    owner, app = make_client(tmp_path)
+    album = create_album(owner)
+    invitee = TestClient(app)
+    invitee.post(
+        "/api/albums/join",
+        json={"invite_code": album["invite_code"], "display_name": "서준"},
+    )
+    members = owner.get(f"/api/albums/{album['album_id']}").json()["members"]
+    owner_id, invitee_id = [item["id"] for item in members]
+    uploaded = owner.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[
+            ("files", ("both.jpg", jpeg_bytes(), "image/jpeg")),
+            ("files", ("owner.jpg", jpeg_bytes(), "image/jpeg")),
+        ],
+    ).json()["results"]
+    both_id, owner_only_id = [item["photo"]["id"] for item in uploaded]
+    with app.state.session_factory() as db:
+        db.add_all(
+            [
+                PhotoMember(photo_id=both_id, member_id=owner_id, source="manual"),
+                PhotoMember(photo_id=both_id, member_id=invitee_id, source="manual"),
+                PhotoMember(photo_id=owner_only_id, member_id=owner_id, source="manual"),
+            ]
+        )
+        db.commit()
+
+    response = owner.get(
+        f"/api/albums/{album['album_id']}/photos",
+        params=[("member_id", owner_id), ("member_id", invitee_id), ("page_size", "1")],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert body["total_pages"] == 1
+    photo = body["items"][0]
+    assert photo["id"] == both_id
+    assert photo["image_url"] == f"/api/photos/{both_id}/download"
+    assert photo["thumb_url"] == f"/api/photos/{both_id}/thumbnail"
+    assert {member["display_name"] for member in photo["members"]} == {"민지", "서준"}
+    assert owner.get(photo["thumb_url"]).status_code == 200

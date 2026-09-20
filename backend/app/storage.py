@@ -122,7 +122,7 @@ def read_upload(file_object: object) -> bytes:
 
 def normalize_image(
     data: bytes, mime: str | None
-) -> tuple[bytes, bytes, int, int, datetime | None]:
+) -> tuple[bytes, bytes, int, int, datetime | None, str]:
     if mime not in ALLOWED_MIME:
         raise ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "JPEG와 PNG만 업로드할 수 있습니다.")
     try:
@@ -130,6 +130,9 @@ def normalize_image(
             source.verify()
         with Image.open(io.BytesIO(data)) as source:
             captured_at = None
+            detected_mime = Image.MIME.get(source.format or "")
+            if detected_mime not in ALLOWED_MIME:
+                raise ApiError(415, "UNSUPPORTED_MEDIA_TYPE", "JPEG와 PNG만 업로드할 수 있습니다.")
             captured_value = source.getexif().get(36867) or source.getexif().get(306)
             if isinstance(captured_value, str):
                 try:
@@ -137,6 +140,7 @@ def normalize_image(
                 except ValueError:
                     pass
             image = ImageOps.exif_transpose(source)
+            original_width, original_height = image.size
             image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
             if image.mode in {"RGBA", "LA"}:
                 background = Image.new("RGB", image.size, "white")
@@ -145,7 +149,6 @@ def normalize_image(
                 image = background
             elif image.mode != "RGB":
                 image = image.convert("RGB")
-            width, height = image.size
             original_buffer = io.BytesIO()
             image.save(original_buffer, format="JPEG", quality=85, optimize=True)
             thumb = image.copy()
@@ -155,14 +158,16 @@ def normalize_image(
             return (
                 original_buffer.getvalue(),
                 thumb_buffer.getvalue(),
-                width,
-                height,
+                original_width,
+                original_height,
                 captured_at,
+                detected_mime,
             )
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ApiError(400, "INVALID_IMAGE", "손상되었거나 너무 큰 이미지입니다.") from exc
 
 
-def photo_keys(album_id: str, photo_id: str) -> tuple[str, str]:
+def photo_keys(album_id: str, photo_id: str, mime: str = "image/jpeg") -> tuple[str, str]:
     prefix = f"albums/{album_id}/photos/{photo_id}"
-    return f"{prefix}/original.jpg", f"{prefix}/thumb.jpg"
+    extension = "png" if mime == "image/png" else "jpg"
+    return f"{prefix}/original.{extension}", f"{prefix}/thumb.jpg"

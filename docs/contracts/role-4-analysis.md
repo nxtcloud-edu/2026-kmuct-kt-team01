@@ -13,7 +13,7 @@
 
 ```python
 from app.analysis import analyze, validate_reference, AnalysisError
-from app.quality import inspect_image, group_bursts      # 선택
+from app.quality import inspect_image
 ```
 
 ## 2. 환경변수
@@ -160,12 +160,10 @@ worker 가 ORM 객체를 그대로 넘기므로 지금 코드 그대로 동작�
   업로드 검증·저장에 바로 쓸 수 있다. JPEG/PNG 아니면 `UNSUPPORTED_FORMAT`.
 - `extract_capture_metadata(bytes)` — EXIF 촬영시각·GPS. 없으면 `null`. 추측하지 않는다.
   장소 이름은 외부 조회 설정이 없어 항상 `null` (`place_reason`).
-- `group_bursts(items, window_seconds=3.0)` — 연사 묶음과 대표 컷.
-  입력 `[{id, captured_at?, created_at?, best_score}]`,
-  출력 `{photo_id: {"burst_group_id": str|None, "is_best": bool}}`.
-  묶이지 않은 단독 사진은 `burst_group_id=None, is_best=True` 다
-  (→ `only_best=true` 필터가 "연사에서 탈락한 컷"만 걸러낸다).
-  DB 에 쓰지 않는다. 앨범 단위로 3번이 호출해 저장한다.
+- 연사 묶음과 대표 컷은 `worker.recompute_bursts`가 DB 트랜잭션 안에서 계산한다.
+  촬영 시각이 있는 분석 완료 사진만 3초 창으로 묶으며, 시각이 없는 사진은
+  `burst_group_id=None, is_best=True` 상태를 유지한다. `only_best=true`는 연사에서
+  탈락한 컷만 제외한다.
 
 ## 7. mock 모드에서 화면 표시
 

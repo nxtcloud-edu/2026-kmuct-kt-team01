@@ -58,11 +58,13 @@ gh pr create --base main --head work/20260920/role-4 --draft \
 - **`requirements.txt`**: 역할 3이 `anthropic[bedrock]==1.7.0`을 이미 추가했습니다.
 - **`tests/test_api.py`**: 역할 3이 직접 고쳤으므로 **제 버전을 버리고 역할 3 것을 그대로 채택**했습니다. 이 브랜치에는 해당 파일에 대한 제 변경이 없습니다.
 
-### 남은 확인 1건
-**연사 그룹화 중복.** `worker.recompute_bursts`와 `quality.group_bursts`가 같은 일을 합니다. 역할 3 것이 이미 DB에 붙어 동작하므로 그대로 두고 제 함수는 남겨만 뒀습니다(제거하지 않았습니다). 정리 여부를 알려 주세요.
+### 연사 그룹화 결정
+DB에 연결된 `worker.recompute_bursts`를 정식 경로로 유지하고 미사용
+`quality.group_bursts`는 조립 브랜치에서 제거했습니다. 촬영 시각이 없는 사진은
+연사 대상에서 제외되며 `burst_group_id=None`, `is_best=True`를 유지합니다.
 
-### 아직 assemble에 안 들어간 커밋
-`61ffc18`, `d13ef63`, `0bf49e7`, 그리고 문서 커밋들입니다.
+### assemble 반영
+`61ffc18`, `d13ef63`, `0bf49e7`과 후속 문서 커밋을 반영했습니다.
 
 ## 인터페이스 요약
 
@@ -82,6 +84,6 @@ analyze(image_bytes, album_id, members, *, load_reference=None) -> {
 
 ## 리뷰 상태
 
-역할 4 범위의 구현은 끝났고 검사는 녹색입니다. 남은 것은 **제가 끝내지 못한 작업이 아니라 외부 조건**입니다 — EC2 인스턴스 역할의 Rekognition·Bedrock 호출 권한(#10, role-1 확인 중). 권한 결과가 나오면 실사진 1장으로 실호출을 검증하고 이 PR과 #10에 기록하겠습니다.
+역할 4 범위의 구현은 끝났고 검사는 녹색입니다. 남은 것은 **제가 끝내지 못한 작업이 아니라 외부 조건**입니다 — EC2 인스턴스 역할의 Rekognition·Bedrock 호출 권한(#10, role-1 확인 중). 권한 결과가 나오면 실사진 1장으로 실호출을 검증하고 #10에 기록하겠습니다.
 
 그 검증 전까지는 배포 환경변수를 `FACE_PROVIDER=mock`으로 두는 편이 안전합니다. 자동 폴백이 없어서, 권한이 없는데 `rekognition`으로 두면 업로드한 사진이 전부 `failed` + `AWS_AUTH`가 됩니다.
