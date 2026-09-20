@@ -32,13 +32,13 @@ function Logo({ onClick }: { onClick: () => void }) {
   return <button className="logo" onClick={onClick} aria-label="찍 홈"><span className="logo-mark" aria-hidden="true"><LogoMarkIcon /><span className="logo-glyph">찍</span></span><b>ZZIK</b></button>
 }
 
-function AppHeader({ screen, activeAlbum, onNavigate }: { screen: Screen; activeAlbum: ActiveAlbum | null; onNavigate: (screen: Screen) => void }) {
+function AppHeader({ screen, activeAlbum, onNavigate, onLeave }: { screen: Screen; activeAlbum: ActiveAlbum | null; onNavigate: (screen: Screen) => void; onLeave: () => void }) {
   const inAlbum = ['album', 'detail', 'coverage'].includes(screen)
   return (
     <header className="app-header">
       <Logo onClick={() => onNavigate(activeAlbum ? 'album' : 'landing')} />
       {inAlbum && <nav className="desktop-nav" aria-label="앨범 메뉴"><button className={screen !== 'coverage' ? 'active' : ''} onClick={() => onNavigate('album')}><GridIcon />사진</button><button className={screen === 'coverage' ? 'active' : ''} onClick={() => onNavigate('coverage')}><ChartIcon />현황</button></nav>}
-      <div className="header-actions">{mode === 'mock' && <span className="sample-badge">샘플 데이터</span>}{inAlbum && activeAlbum && <span className="profile-chip"><span className="avatar coral">{activeAlbum.displayName.slice(0, 1)}</span><span>{activeAlbum.displayName}</span></span>}</div>
+      <div className="header-actions">{mode === 'mock' && <span className="sample-badge">샘플 데이터</span>}{inAlbum && activeAlbum && <span className="profile-chip"><span className="avatar coral">{activeAlbum.displayName.slice(0, 1)}</span><span>{activeAlbum.displayName}</span></span>}{activeAlbum && <button type="button" className="leave-album" aria-label="현재 앨범 나가기" onClick={onLeave}>나가기</button>}</div>
     </header>
   )
 }
@@ -56,6 +56,13 @@ export default function App() {
     }
   }, [activeAlbum])
   function openPhoto(id: string) { setPhotoId(id); setScreen('detail'); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  function leaveAlbum() {
+    try { window.sessionStorage.removeItem(ACTIVE_ALBUM_KEY) } catch { /* Continue with in-memory cleanup. */ }
+    setActiveAlbum(null)
+    setPhotoId(null)
+    setScreen('landing')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
   function preview() {
     if (mode === 'api') {
       window.location.assign(`${window.location.pathname}?data=mock`)
@@ -66,7 +73,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <AppHeader screen={screen} activeAlbum={activeAlbum} onNavigate={setScreen} />
+      <AppHeader screen={screen} activeAlbum={activeAlbum} onNavigate={setScreen} onLeave={leaveAlbum} />
       {screen === 'landing' && <Landing client={api} onComplete={(album) => { setActiveAlbum(album); setScreen('reference') }} onPreview={preview} />}
       {screen === 'reference' && <ReferenceRegistration client={api} onDone={() => setScreen('album')} />}
       {screen === 'album' && activeAlbum && <Gallery client={api} albumId={activeAlbum.albumId} currentMemberId={activeAlbum.memberId} onOpen={openPhoto} onCoverage={() => setScreen('coverage')} onReference={() => setScreen('reference')} />}
