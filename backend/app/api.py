@@ -51,6 +51,7 @@ from backend.app.storage import (
     normalize_image,
     photo_keys,
     read_upload,
+    transcode_heif_to_jpeg,
 )
 
 router = APIRouter(prefix="/api")
@@ -212,7 +213,8 @@ def upload_reference(
     db: Annotated[Session, Depends(get_db)],
     storage: Annotated[Storage, Depends(get_storage)],
 ) -> dict[str, Any]:
-    raw = read_upload(file.file)
+    # iPhone HEIC 는 여기서 JPEG 로 바꿔 아래 분석·저장 계층이 손대지 않게 한다.
+    raw = transcode_heif_to_jpeg(read_upload(file.file))
     try:
         result = validate_reference(raw)
     except AnalysisUnavailable as exc:
@@ -255,7 +257,7 @@ def upload_photos(
     for upload in files:
         stored_keys: list[str] = []
         try:
-            raw = read_upload(upload.file)
+            raw = transcode_heif_to_jpeg(read_upload(upload.file))
             _, thumbnail, width, height, captured_at, detected_mime = normalize_image(
                 raw, upload.content_type
             )

@@ -13,10 +13,38 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from backend.app.config import Settings
 from backend.app.errors import ApiError
 
+# iPhone 사진(HEIC/HEIF)을 Pillow 가 열 수 있게 한다.
+# 패키지가 없는 환경에서도 기존 JPEG/PNG 경로는 그대로 동작해야 하므로 실패를 삼킨다.
+try:  # pragma: no cover - 설치 여부에 따라 갈리는 분기
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+    HEIF_SUPPORTED = True
+except ImportError:  # pragma: no cover
+    HEIF_SUPPORTED = False
+
 Image.MAX_IMAGE_PIXELS = 25_000_000
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_MIME = {"image/jpeg", "image/png"}
 _SAFE_SEGMENT = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+# ISO-BMFF ftyp 브랜드. iPhone 은 heic/heix, 최신 기기는 avif 도 쓴다.
+_HEIF_BRANDS = frozenset(
+    {
+        b"heic",
+        b"heix",
+        b"heim",
+        b"heis",
+        b"hevc",
+        b"hevx",
+        b"hevm",
+        b"hevs",
+        b"mif1",
+        b"msf1",
+        b"avif",
+        b"avis",
+    }
+)
 
 
 def validate_key(key: str) -> str:
@@ -118,6 +146,43 @@ def read_upload(file_object: object) -> bytes:
     if not data:
         raise ApiError(400, "EMPTY_FILE", "빈 파일은 업로드할 수 없습니다.")
     return data
+
+
+def is_heif(data: bytes) -> bool:
+    """HEIC/HEIF/AVIF 여부를 바이트 서명으로 판단한다. 확장자·Content-Type 은 믿지 않는다."""
+    return len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in _HEIF_BRANDS
+
+
+def transcode_heif_to_jpeg(data: bytes) -> bytes:
+    """iPhone 사진(HEIC)을 JPEG 바이트로 바꾼다. 그 외 포맷은 원본을 그대로 돌려준다.
+
+    업로드 진입점에서 한 번만 호출하면 이후 계층(분석·저장·워커)은 HEIC 를 몰라도 된다.
+    EXIF 는 촬영 시각·GPS 를 잃지 않도록 그대로 옮긴다.
+    """
+    if not is_heif(data):
+        return data
+    if not HEIF_SUPPORTED:
+        raise ApiError(
+            415,
+            "UNSUPPORTED_MEDIA_TYPE",
+            "서버에 HEIC 변환 모듈이 없습니다. JPEG로 저장한 사진을 올려주세요.",
+        )
+    try:
+        with Image.open(io.BytesIO(data)) as source:
+            image = ImageOps.exif_transpose(source)
+            # 회전 적용 뒤의 EXIF 를 쓴다. 원본 EXIF 를 그대로 옮기면 Orientation 이 남아
+            # 뷰어가 한 번 더 회전시킨다.
+            exif = image.info.get("exif")
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            buffer = io.BytesIO()
+            save_options: dict[str, object] = {"quality": 90, "optimize": True}
+            if exif:
+                save_options["exif"] = exif
+            image.save(buffer, format="JPEG", **save_options)
+            return buffer.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
+        raise ApiError(400, "INVALID_IMAGE", "손상되었거나 너무 큰 이미지입니다.") from exc
 
 
 def normalize_image(

@@ -4,6 +4,7 @@ import io
 import hashlib
 import zipfile
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import func, select
@@ -16,6 +17,18 @@ from backend.app.models import Approval, Base, Edit, Member, Photo, PhotoMember
 def jpeg_bytes() -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (32, 24), "#7c3aed").save(output, format="JPEG")
+    return output.getvalue()
+
+
+def heic_bytes(width: int = 200, height: int = 160) -> bytes:
+    """iPhone 이 보내는 것과 같은 HEIC 바이트. pillow-heif 가 없으면 테스트를 건너뛴다."""
+    pillow_heif = pytest.importorskip("pillow_heif")
+    pillow_heif.register_heif_opener()
+    output = io.BytesIO()
+    try:
+        Image.new("RGB", (width, height), "#0ea5e9").save(output, format="HEIF", quality=80)
+    except Exception as exc:  # pragma: no cover - HEIF 인코더 없는 빌드
+        pytest.skip(f"이 환경의 libheif 에 HEIF 인코더가 없습니다: {exc}")
     return output.getvalue()
 
 
@@ -108,6 +121,43 @@ def test_upload_accepts_jpeg_with_nonstandard_declared_type(tmp_path) -> None:
     assert listing.json()["items"][0]["analysis_status"] == "pending"
     assert listing.json()["items"][0]["provider"] is None
     assert listing.json()["items"][0]["mode"] is None
+
+
+def test_upload_converts_iphone_heic_to_jpeg(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    album = create_album(client)
+
+    response = client.post(
+        f"/api/albums/{album['album_id']}/photos",
+        files=[("files", ("IMG_0001.HEIC", heic_bytes(), "image/heic"))],
+    )
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert [item["ok"] for item in results] == [True], results
+
+    with app.state.session_factory() as db:
+        photo = db.scalars(select(Photo)).one()
+        assert photo.mime == "image/jpeg"
+        assert (photo.width, photo.height) == (200, 160)
+        stored = app.state.storage.get(photo.s3_key)
+    # 저장된 원본도 JPEG 이어야 워커·브라우저가 그대로 읽는다.
+    assert stored.startswith(b"\xff\xd8\xff")
+
+
+def test_reference_endpoint_accepts_iphone_heic(tmp_path) -> None:
+    client, app = make_client(tmp_path)
+    create_album(client)
+
+    response = client.post(
+        "/api/members/me/reference",
+        files={"file": ("IMG_0002.HEIC", heic_bytes(), "image/heic")},
+    )
+    assert response.status_code == 200, response.json()
+    assert response.json()["reference_indexed"] is True
+
+    with app.state.session_factory() as db:
+        member = db.get(Member, response.json()["member_id"])
+        assert app.state.storage.get(member.reference_key).startswith(b"\xff\xd8\xff")
 
 
 def test_upload_preserves_png_original_bytes_and_metadata_across_restart(tmp_path) -> None:
