@@ -17,10 +17,11 @@
 - `3d3510f`: 저장된 보정 버전의 서버 미리보기와 개별 다운로드를 인증된 API로 제공한다.
 - `b672000`: `matched`, `uncertain`, `unregistered`, `no_face`와 분석 실패를 화면에서 구분한다.
 - `a34699f`: 중단된 worker 작업을 lease 뒤 회수하고 재시도 한도를 적용한다.
+- `e5b5768`: 분석 중 수동 인물 변경을 보존하고 no_face 승인과 최종 ZIP 정책을 일치시킨다.
 
 ## 검증
 
-- Python 3.13: 218 tests passed
+- Python 3.13: 역할 5 조립 수락 검사를 포함해 222 tests passed
 - 프론트: TypeScript, 23 Vitest tests, production build passed
 - Alembic: `0001`부터 `0003`까지 upgrade/check/downgrade/upgrade passed
 - npm audit: 0 vulnerabilities
