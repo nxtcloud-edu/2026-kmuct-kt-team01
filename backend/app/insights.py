@@ -33,6 +33,7 @@ __all__ = [
     "summarize_album",
     "select_highlights",
     "build_facts",
+    "parse_search_query",
 ]
 
 PROVIDER_BEDROCK = "bedrock"
@@ -433,3 +434,198 @@ def _translate_summary_error(exc: BaseException) -> AnalysisError:
 
     logger.exception("Bedrock 요약 예상치 못한 오류")
     return AnalysisError("SUMMARY_FAILED", "여행 요약 생성에 실패했습니다", retryable=False)
+
+
+# --------------------------------------------------------------------------
+# 자연어 검색 구조화 (T3 8-b)
+# --------------------------------------------------------------------------
+# "바다에서 찍은 단체샷" -> {"tags": ["바다"], "shot_type": "group"}
+# **검색 자체는 하지 않는다.** 구조화된 필터만 돌려주고 SQL 은 3번이 짠다.
+# 임베딩·벡터 인프라를 만들지 않는다.
+
+SHOT_TYPES = ("any", "solo", "group", "no_face")
+
+# quality.LABEL_TAG_MAP 이 만들어 내는 한글 태그 9종. 이 밖의 태그는 만들지 않는다.
+SEARCH_TAGS = ("바다", "산", "음식", "카페", "야경", "노을", "꽃", "숲", "도시")
+
+# mock(규칙) 파서용 한국어 단서. 모델 없이도 데모가 돌아가게 한다.
+_TAG_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "바다": ("바다", "해변", "해수욕장", "오션", "파도"),
+    "산": ("산", "등산", "산속", "정상"),
+    "음식": ("음식", "먹", "밥", "맛집", "요리"),
+    "카페": ("카페", "커피"),
+    "야경": ("야경", "밤", "야간"),
+    "노을": ("노을", "석양", "일몰"),
+    "꽃": ("꽃", "벚꽃", "꽃밭"),
+    "숲": ("숲", "수목원", "나무"),
+    "도시": ("도시", "시내", "빌딩", "거리"),
+}
+_GROUP_KEYWORDS = ("단체", "다같이", "다 같이", "함께", "여럿", "모두", "전부", "우리")
+_SOLO_KEYWORDS = ("혼자", "솔로", "독사진", "단독", "셀카")
+_NO_FACE_KEYWORDS = ("사람 없", "사람없", "풍경만", "인물 없", "인물없")
+_BEST_KEYWORDS = ("베스트", "잘 나온", "잘나온", "제일 좋", "가장 좋", "대표")
+
+_SEARCH_SYSTEM_PROMPT = """너는 사진 검색어를 구조화된 필터로 바꾼다. 검색을 직접 하지 않는다.
+
+출력 규칙:
+- tags 는 주어진 목록에 있는 값만 쓴다. 목록에 없는 장소·음식·지명은 절대 만들지 않는다.
+- shot_type 은 여러 명이 나온 사진이면 group, 한 명이면 solo,
+  사람이 없는 사진이면 no_face, 언급이 없으면 any 다.
+- member_names 는 주어진 멤버 이름 목록에 있는 이름만 쓴다. 없으면 빈 배열이다.
+- only_best 는 "베스트", "잘 나온 것만" 처럼 대표 컷만 원할 때 true 다.
+- 확실하지 않으면 넣지 않는다. 비워 두는 편이 틀리게 채우는 것보다 낫다."""
+
+_SEARCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tags": {"type": "array", "items": {"type": "string", "enum": list(SEARCH_TAGS)}},
+        "shot_type": {"type": "string", "enum": list(SHOT_TYPES)},
+        "member_names": {"type": "array", "items": {"type": "string"}},
+        "only_best": {"type": "boolean"},
+    },
+    "required": ["tags", "shot_type", "member_names", "only_best"],
+    "additionalProperties": False,
+}
+
+
+def parse_search_query(
+    query: str,
+    *,
+    member_names: Sequence[str] = (),
+    settings: SummarySettings | None = None,
+    client: Any | None = None,
+) -> dict[str, Any]:
+    """자연어 검색어를 {tags, shot_type, member_names, only_best} 로 바꾼다.
+
+    반환값은 그대로 SQL WHERE 로 옮길 수 있는 필터다. 검색 결과가 아니다.
+      tags         AND 조건으로 쓴다 (photos.tags 에 전부 포함)
+      shot_type    'any' 면 조건을 걸지 않는다
+      member_names photo_members 조인 조건. 앨범에 실제로 있는 이름만 돌려준다
+      only_best    True 면 photos.is_best 조건 추가
+
+    provider 가 mock/off 면 모델을 부르지 않고 한국어 키워드 규칙으로 파싱한다.
+    """
+    settings = settings or load_summary_settings()
+    started = time.perf_counter()
+    text = (query or "").strip()
+    known_names = [str(name) for name in member_names or []]
+
+    if not text:
+        raise AnalysisError("EMPTY_QUERY", "검색어가 비어 있습니다", retryable=False)
+
+    if settings.provider == PROVIDER_BEDROCK:
+        filters, usage = _bedrock_search_filters(text, known_names, settings, client)
+        provider, mode, calls = PROVIDER_BEDROCK, MODE_LIVE, 1
+    else:
+        filters, usage = _rule_search_filters(text, known_names), None
+        provider, mode, calls = PROVIDER_MOCK, MODE_MOCK, 0
+
+    filters = _sanitize_filters(filters, known_names)
+    return {
+        **filters,
+        "query": text,
+        "provider": provider,
+        "mode": mode,
+        "model_id": settings.model_id if calls else None,
+        "calls": {"bedrock_invoke": calls},
+        "elapsed_ms": int((time.perf_counter() - started) * 1000),
+        "usage": usage,
+    }
+
+
+def _sanitize_filters(filters: Mapping[str, Any], known_names: Sequence[str]) -> dict[str, Any]:
+    """모델이 무엇을 반환하든 허용된 값만 남긴다. 지어낸 태그·이름은 버린다."""
+    tags = [t for t in (filters.get("tags") or []) if t in SEARCH_TAGS]
+    shot_type = filters.get("shot_type")
+    if shot_type not in SHOT_TYPES:
+        shot_type = "any"
+    names = [n for n in (filters.get("member_names") or []) if n in known_names]
+    return {
+        "tags": sorted(dict.fromkeys(tags), key=SEARCH_TAGS.index),
+        "shot_type": shot_type,
+        "member_names": sorted(dict.fromkeys(names)),
+        "only_best": bool(filters.get("only_best")),
+        "understood": bool(tags or shot_type != "any" or names or filters.get("only_best")),
+    }
+
+
+def _rule_search_filters(text: str, known_names: Sequence[str]) -> dict[str, Any]:
+    """모델 없이 키워드로만 파싱한다. 결정론적이고 지어내지 않는다."""
+    lowered = text.lower()
+    tags = [tag for tag, words in _TAG_KEYWORDS.items() if any(w in lowered for w in words)]
+
+    shot_type = "any"
+    if any(w in lowered for w in _NO_FACE_KEYWORDS):
+        shot_type = "no_face"
+    elif any(w in lowered for w in _GROUP_KEYWORDS):
+        shot_type = "group"
+    elif any(w in lowered for w in _SOLO_KEYWORDS):
+        shot_type = "solo"
+
+    names = [name for name in known_names if name and name in text]
+    return {
+        "tags": tags,
+        "shot_type": shot_type,
+        "member_names": names,
+        "only_best": any(w in lowered for w in _BEST_KEYWORDS),
+    }
+
+
+def _bedrock_search_filters(
+    text: str,
+    known_names: Sequence[str],
+    settings: SummarySettings,
+    client: Any | None,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    client = client or _bedrock_client(settings)
+    payload = json.dumps(
+        {
+            "query": text,
+            "allowed_tags": list(SEARCH_TAGS),
+            "allowed_shot_types": list(SHOT_TYPES),
+            "album_member_names": list(known_names),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+
+    try:
+        response = client.messages.create(
+            model=settings.model_id,
+            max_tokens=2000,
+            system=_SEARCH_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": payload}],
+            output_config={
+                "effort": "low",
+                "format": {"type": "json_schema", "schema": _SEARCH_SCHEMA},
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise _translate_summary_error(exc) from exc
+
+    if getattr(response, "stop_reason", None) == "refusal":
+        raise AnalysisError("SEARCH_REFUSED", "검색어 해석이 거절되었습니다", retryable=False)
+
+    block = next(
+        (b.text for b in getattr(response, "content", []) if getattr(b, "type", None) == "text"),
+        None,
+    )
+    if not block:
+        raise AnalysisError("SEARCH_EMPTY", "검색어를 해석하지 못했습니다", retryable=True)
+    try:
+        filters = json.loads(block)
+    except ValueError as exc:
+        raise AnalysisError(
+            "SEARCH_INVALID", "검색어 해석 결과 형식이 올바르지 않습니다", retryable=True
+        ) from exc
+
+    usage = getattr(response, "usage", None)
+    usage_dict = (
+        {
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
+        }
+        if usage is not None
+        else None
+    )
+    return filters, usage_dict

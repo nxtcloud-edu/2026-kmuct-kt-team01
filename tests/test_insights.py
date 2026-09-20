@@ -302,3 +302,106 @@ def test_missing_credentials_is_not_silently_mocked(album):
         )
     assert err.value.code == "AWS_AUTH"
     assert err.value.retryable is False
+
+
+# --------------------------------------------------------------------------
+# 자연어 검색 구조화 (T3 8-b)
+# --------------------------------------------------------------------------
+from backend.app.insights import SEARCH_TAGS, parse_search_query  # noqa: E402
+
+
+def rule_settings():
+    return load_summary_settings({"SUMMARY_PROVIDER": "mock"})
+
+
+def test_rule_parser_handles_the_demo_query():
+    result = parse_search_query("바다에서 찍은 단체샷", settings=rule_settings())
+    assert result["tags"] == ["바다"]
+    assert result["shot_type"] == "group"
+    assert result["only_best"] is False
+    assert result["understood"] is True
+    assert result["calls"]["bedrock_invoke"] == 0
+    assert result["mode"] == "mock"
+
+
+def test_rule_parser_detects_solo_and_best():
+    result = parse_search_query("혼자 나온 사진 중에 잘 나온 것만", settings=rule_settings())
+    assert result["shot_type"] == "solo"
+    assert result["only_best"] is True
+
+
+def test_rule_parser_detects_no_face():
+    result = parse_search_query("사람 없는 풍경 사진", settings=rule_settings())
+    assert result["shot_type"] == "no_face"
+
+
+def test_rule_parser_matches_only_real_member_names():
+    result = parse_search_query("지민이 나온 카페 사진", member_names=["지민", "현우"], settings=rule_settings())
+    assert result["member_names"] == ["지민"]
+    assert result["tags"] == ["카페"]
+
+
+def test_unknown_query_is_reported_as_not_understood():
+    result = parse_search_query("어제 그거", settings=rule_settings())
+    assert result["tags"] == []
+    assert result["shot_type"] == "any"
+    assert result["understood"] is False
+
+
+def test_empty_query_is_rejected():
+    with pytest.raises(AnalysisError) as err:
+        parse_search_query("   ", settings=rule_settings())
+    assert err.value.code == "EMPTY_QUERY"
+
+
+def test_bedrock_search_sends_allowed_values_and_calls_once():
+    client = FakeClient(
+        text_response(
+            {"tags": ["바다"], "shot_type": "group", "member_names": [], "only_best": False}
+        )
+    )
+    result = parse_search_query(
+        "바닷가에서 다 같이",
+        member_names=["지민"],
+        settings=load_summary_settings({"SUMMARY_PROVIDER": "bedrock"}),
+        client=client,
+    )
+    assert result["tags"] == ["바다"]
+    assert result["shot_type"] == "group"
+    assert result["calls"]["bedrock_invoke"] == 1
+
+    sent = json.loads(client.messages.kwargs["messages"][0]["content"])
+    assert sent["allowed_tags"] == list(SEARCH_TAGS)
+    assert sent["album_member_names"] == ["지민"]
+    schema = client.messages.kwargs["output_config"]["format"]["schema"]
+    assert schema["properties"]["tags"]["items"]["enum"] == list(SEARCH_TAGS)
+
+
+def test_invented_tag_or_name_from_model_is_discarded():
+    """모델이 목록 밖 태그나 없는 사람 이름을 내도 버린다."""
+    client = FakeClient(
+        text_response(
+            {
+                "tags": ["바다", "해운대 해수욕장", "치킨"],
+                "shot_type": "무엇",
+                "member_names": ["지민", "존재하지않는사람"],
+                "only_best": True,
+            }
+        )
+    )
+    result = parse_search_query(
+        "해운대에서",
+        member_names=["지민"],
+        settings=load_summary_settings({"SUMMARY_PROVIDER": "bedrock"}),
+        client=client,
+    )
+    assert result["tags"] == ["바다"]
+    assert result["shot_type"] == "any"  # 허용 목록 밖 값은 any 로 떨어뜨린다
+    assert result["member_names"] == ["지민"]
+
+
+def test_search_result_is_a_filter_not_search_results():
+    result = parse_search_query("바다 단체샷", settings=rule_settings())
+    assert "photo_ids" not in result
+    assert "results" not in result
+    assert set(SEARCH_TAGS) >= set(result["tags"])
