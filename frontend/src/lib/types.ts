@@ -22,6 +22,7 @@ export interface Album {
   created_at: string
   photo_count: number
   members: Member[]
+  tags?: string[]
 }
 
 export interface PhotoMember {
@@ -69,6 +70,7 @@ export interface Photo {
 export interface PhotoFilters {
   member_ids?: string[]
   shot_type?: ShotType
+  face_status?: 'unregistered' | 'uncertain' | 'no_face'
   tag?: string
   only_best?: boolean
   sort?: 'captured_desc' | 'best_desc'
